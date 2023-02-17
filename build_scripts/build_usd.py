@@ -808,6 +808,7 @@ def InstallBoost_Helper(context, force, buildArgs):
 
         if context.buildOIIO:
             b2_settings.append("--with-date_time")
+            b2_settings.append("--with-chrono")
 
         if context.buildOIIO or context.enableOpenVDB:
             b2_settings.append("--with-system")
@@ -920,10 +921,10 @@ elif MacOS():
     # On MacOS Intel systems we experience various crashes in tests during
     # teardown starting with 2018 Update 2. Until we figure that out, we use
     # 2018 Update 1 on this platform.
-    TBB_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/2019_U6.tar.gz"
-    TBB_INTEL_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/2018_U1.tar.gz"
+    TBB_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2020.2.tar.gz"
+    TBB_INTEL_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2020.2.tar.gz"
 else:
-    TBB_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/2019_U6.tar.gz"
+    TBB_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2020.2.tar.gz"
 
 def InstallTBB(context, force, buildArgs):
     if Windows():
