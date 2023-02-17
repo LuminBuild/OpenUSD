@@ -914,8 +914,8 @@ BOOST = Dependency("boost", InstallBoost,
 # Intel TBB
 
 if Windows():
-    TBB_URL = "https://github.com/oneapi-src/oneTBB/releases/download/2019_U6/tbb2019_20190410oss_win.zip"
-    TBB_ROOT_DIR_NAME = "tbb2019_20190410oss"
+    TBB_URL = "https://github.com/oneapi-src/oneTBB/releases/download/v2020.2/tbb-2020.2-win.zip"
+    TBB_ROOT_DIR_NAME = "tbb"
 elif MacOS():
     # On MacOS Intel systems we experience various crashes in tests during
     # teardown starting with 2018 Update 2. Until we figure that out, we use
@@ -1256,7 +1256,7 @@ BLOSC = Dependency("Blosc", InstallBLOSC, "include/blosc.h")
 ############################################################
 # OpenVDB
 
-OPENVDB_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs/tags/v7.1.0.zip"
+OPENVDB_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs/tags/v10.0.1.zip"
 
 def InstallOpenVDB(context, force, buildArgs):
     with CurrentWorkingDirectory(DownloadURL(OPENVDB_URL, context, force)):
