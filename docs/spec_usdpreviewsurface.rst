@@ -189,6 +189,12 @@ and :usda:`opacity`.
   Expects normal in tangent space [(-1,-1,-1), (1,1,1)]. This means your texture
   reader implementation should provide data to this node that is properly scaled
   and ready to be consumed as a tangent space normal.
+  If the texture has 8 bits per component, then scale and bias must be adjusted 
+  to be (2.0, 2.0, 2.0, 1.0) and (-1, -1, -1, 0) respectively in order to 
+  satisfy tangent space requirements. Normal map data is commonly expected to be 
+  linearly encoded. However, many image-writing tools automatically set the 
+  profile of three-channel, 8-bit images to SRGB. To prevent an unwanted 
+  transformation, the sourceColorSpace must also be set to "raw".
 
 * **displacement - float - 0.0** 
 
@@ -309,7 +315,15 @@ typeName information that may be useful to a renderer or shading system.
            doc = """Expects normal in tangent space [(-1,-1,-1), (1,1,1)]
                This means your texture reader implementation should provide
                data to this node that is properly scaled and ready
-               to be consumed as a tangent space normal."""
+               to be consumed as a tangent space normal.
+               If the texture has 8 bits per component, then scale and bias 
+               must be adjusted to be (2.0, 2.0, 2.0, 1.0) and (-1, -1, -1, 0) 
+               respectively in order to satisfy tangent space requirements. 
+               Normal map data is commonly expected to be linearly encoded. 
+               However, many image-writing tools automatically set the profile 
+               of three-channel, 8-bit images to SRGB. To prevent an unwanted 
+               transformation, the sourceColorSpace must also be set to "raw".
+               """
        )
    
        float inputs:displacement = 0.0 (
@@ -415,7 +429,8 @@ UDIM's.
     * *raw* : Use texture data as it was read from the texture and do not mark
       it as using a specific color space.
 
-    * *sRGB* : Mark texture as sRGB when reading.
+    * *sRGB* : Mark texture as sRGB when reading. The texture will be read using
+      the sRGB transfer curve, but not filtered against the sRGB gamut. 
 
     * *auto* : Check for gamma/color space metadata in the texture file itself;
       if metadata is indicative of sRGB, mark texture as *sRGB* . If no relevant
@@ -986,7 +1001,7 @@ Changes, by Version
 Version 2.0 - Initial Public Specification
 ##########################################
 
-`USD Preview Surface Proposal Version 2.0 <https://graphics.pixar.com/usd/files/UsdPreviewSurfaceProposal_v2_0.pdf>`_
+`USD Preview Surface Proposal Version 2.0 <https://openusd.org/files/UsdPreviewSurfaceProposal_v2_0.pdf>`_
 
 Version 2.2 - Before Type Changes
 #################################
@@ -998,7 +1013,7 @@ From version 2.0...
     * Adds :ref:`opacityThreshold <addopacitythreshold>`
       and clarification of *opacity* behavior for UsdPreviewSurface
 
-`USD Preview Surface Proposal Version 2.2 <https://graphics.pixar.com/usd/files/UsdPreviewSurfaceProposal_v_2_2.pdf>`_
+`USD Preview Surface Proposal Version 2.2 <https://openusd.org/files/UsdPreviewSurfaceProposal_v_2_2.pdf>`_
 
 Version 2.3
 ###########

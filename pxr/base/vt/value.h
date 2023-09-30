@@ -34,6 +34,7 @@
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
+#include "pxr/base/arch/pragmas.h"
 #include "pxr/base/tf/anyUniquePtr.h"
 #include "pxr/base/tf/pointerAndBits.h"
 #include "pxr/base/tf/safeTypeCompare.h"
@@ -1358,10 +1359,18 @@ private:
     }
 
     template <class T>
-    inline bool _TypeIs() const {
+    inline std::enable_if_t<VtIsKnownValueType_Workaround<T>::value, bool>
+    _TypeIs() const {
+        return _info->knownTypeIndex == VtGetKnownValueTypeIndex<T>() ||
+            ARCH_UNLIKELY(_IsProxy() && _TypeIsImpl(typeid(T)));
+    }
+
+    template <class T>
+    inline std::enable_if_t<!VtIsKnownValueType_Workaround<T>::value, bool>
+    _TypeIs() const {
         std::type_info const &t = typeid(T);
-        bool cmp = TfSafeTypeCompare(_info->typeInfo, t);
-        return ARCH_UNLIKELY(_IsProxy() && !cmp) ? _TypeIsImpl(t) : cmp;
+        return TfSafeTypeCompare(_info->typeInfo, t) ||
+            ARCH_UNLIKELY(_IsProxy() && _TypeIsImpl(t));
     }
 
     VT_API bool _TypeIsImpl(std::type_info const &queriedType) const;
@@ -1415,8 +1424,12 @@ private:
 
     inline void _Clear() {
         // optimize for local types not to deref _info.
+ARCH_PRAGMA_PUSH
+// XXX: http://bug/DEV-16695
+ARCH_PRAGMA_MAYBE_UNINITIALIZED
         if (_info.GetLiteral() && !_IsLocalAndTriviallyCopyable())
             _info.Get()->Destroy(_storage);
+ARCH_PRAGMA_POP
         _info.Set(nullptr, 0);
     }
 

@@ -53,7 +53,6 @@
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/tf/mallocTag.h"
 
-#include <boost/noncopyable.hpp>
 #include <boost/optional.hpp>
 #include <boost/variant.hpp>
 
@@ -549,7 +548,7 @@ _PrimSetVariantSelection(Sdf_TextParserContext *context)
             const std::string variantName = it->second.Get<std::string>();
             ERROR_AND_RETURN_IF_NOT_ALLOWED(
                 context, 
-                SdfSchema::IsValidVariantIdentifier(variantName));
+                SdfSchema::IsValidVariantSelection(variantName));
 
             refVars[it->first] = variantName;
         }
@@ -569,13 +568,13 @@ _RelocatesAdd(const Value& arg1, const Value& arg2,
     SdfPath srcPath(srcStr);
     SdfPath targetPath(targetStr);
 
-    if (!srcPath.IsPrimPath()) {
-        Err(context, "'%s' is not a valid prim path",
+    if (!SdfSchema::IsValidRelocatesPath(srcPath)) {
+        Err(context, "'%s' is not a valid relocates path",
             srcStr.c_str());
         return;
     }
-    if (!targetPath.IsPrimPath()) {
-        Err(context, "'%s' is not a valid prim path",
+    if (!SdfSchema::IsValidRelocatesPath(targetPath)) {
+        Err(context, "'%s' is not a valid relocates path",
             targetStr.c_str());
         return;
     }
@@ -3179,8 +3178,10 @@ static void _ReportParseError(Sdf_TextParserContext *context,
 // blocks of 8KB, which leads to O(n^2) behavior when trying to match strings
 // that are over this size. Giving flex a pre-filled buffer avoids this
 // behavior.
-struct Sdf_MemoryFlexBuffer : public boost::noncopyable
+struct Sdf_MemoryFlexBuffer
 {
+    Sdf_MemoryFlexBuffer(const Sdf_MemoryFlexBuffer&) = delete;
+    Sdf_MemoryFlexBuffer& operator=(const Sdf_MemoryFlexBuffer&) = delete;
 public:
     Sdf_MemoryFlexBuffer(const std::shared_ptr<ArAsset>& asset,
                          const std::string& name, yyscan_t scanner);

@@ -251,7 +251,7 @@ def "Model" (
 
 When a _skel:animationSource_ property is defined, it is "inherited" down
 namespace, onto any _Skeleton_ primitive beneath it. So in the above example,
-`</Model/Skel>` will be affected by the SkelAnimation at `</Model/Anim>`.
+`</Model/Skel>` will be affected by the SkelAnimation at `</Anim>`.
 
 There are a couple reasons why data is separated in this manner:
 - Encoding animation separately means that different schemes can be developed
@@ -385,7 +385,7 @@ So at a weight value of -0.25, the shape at 0.25 is applied with a weight of -1.
 
 \section UsdSkel_BindingAPI Binding API Schema
 
-The UsdSkelBindingAPI schema provides a means of bindingboth _Skeleton_ and
+The UsdSkelBindingAPI schema provides a means of binding both _Skeleton_ and
 _SkelAnimation_ into a geometry hierarchy. This schema is also responsible
 for defining joint influences, as well as an optional _geomBindTransform_
 property to define the space for skinning.  Whenever using a UsdSkelBindingAPI
@@ -525,7 +525,7 @@ effect.
 
 Joint influences for skinning points are defined by setting the
 _primvars:skel:jointIndices_ and _primvars:skel:jointWeights_ 
-<a href="https://graphics.pixar.com/usd/docs/USD-Glossary.html#USDGlossary-Primvar">primvars</a>,
+<a href="https://openusd.org/release/glossary.html#usdglossary-primvar">primvars</a>,
 using the UsdSkelBindingAPI. The _jointIndices_ primvar provides an array giving
 the joint index of an influence, while the _jointWeights_ primvar provides a
 weight value corresponding to each of those indices.
@@ -651,7 +651,7 @@ allowing a skinning kernel to exit from a point-deformation loop early.
 \subsection UsdSkel_BindingAPI_GeomBindTransform BindingAPI: GeomBindTransform
 
 For skinning to apply correctly, the constant _primvars:skel:geomBindTransform_ 
-<a href="https://graphics.pixar.com/usd/docs/USD-Glossary.html#USDGlossary-Primvar">primvar</a>
+<a href="https://openusd.org/release/glossary.html#usdglossary-primvar">primvar</a>
 should be authored on each skinnable primitive, using the UsdSkelBindingAPI.
 This primvar stores the world space transform of a skinned primitive at bind
 time. When skinning is applied, points of each skinnable primitive are
