@@ -44,6 +44,7 @@ pxr_library(hd
         cubeSchema
         cylinderSchema
         dataSource
+        dataSourceHash
         dataSourceLegacyPrim
         dataSourceLocator
         dataSourceMaterialNetworkInterface
@@ -83,6 +84,8 @@ pxr_library(hd
         geomSubset
         geomSubsetSchema
         geomSubsetsSchema
+        imageShader
+        imageShaderSchema
         instanceCategoriesSchema
         instancedBySchema
         instanceIndicesSchema
@@ -113,7 +116,6 @@ pxr_library(hd
         meshTopology
         meshTopologySchema
         meshUtil
-        modelSchema
         noticeBatchingSceneIndex
         nurbsCurvesSchema
         nurbsPatchSchema
@@ -418,7 +420,7 @@ pxr_register_test(testHdSceneIndex
 pxr_register_test(testHdSortedIds
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdSortedIds"
     # XXX Disabling compare for now. testHdSortedId_removeTest.txt differs on Mac and Windows.
-    # DIFF_COMPARE testHdSortedId_populateTest.txt testHdSortedId_singleInsertTest.txt testHdSortedId_multiInsertTest.txt testHdSortedId_removeTest.txt testHdSortedId_removeOnlyElementTest.txt testHdSortedId_removeRangeTest.txt testHdSortedId_removeBatchTest.txt testHdSortedId_removeSortedTest.txt testHdSortedId_removeUnsortedTest.txt testHdSortedId_removeAfterInsertNoSyncTest.txt
+    # DIFF_COMPARE testHdSortedId_populateTest.txt testHdSortedId_singleInsertTest.txt testHdSortedId_multiInsertTest.txt testHdSortedId_removeOnlyElementTest.txt testHdSortedId_removeRangeTest.txt testHdSortedId_removeBatchTest.txt testHdSortedId_removeSortedTest.txt testHdSortedId_removeUnsortedTest.txt testHdSortedId_removeAfterInsertNoSyncTest.txt
 )
 
 pxr_register_test(testHdTimeSampleArray
