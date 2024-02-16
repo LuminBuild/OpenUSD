@@ -89,6 +89,10 @@ HgiVulkanInstance::HgiVulkanInstance()
     , _vkInstance(nullptr)
     , _hasPresentation(false)
 {
+    TF_VERIFY(
+        volkInitialize() == VK_SUCCESS
+    );
+
     VkApplicationInfo appInfo = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
@@ -154,6 +158,8 @@ HgiVulkanInstance::HgiVulkanInstance()
             HgiVulkanAllocator(),
             &_vkInstance)
     );
+
+    volkLoadInstance(_vkInstance);
 
     HgiVulkanCreateDebug(this);
 }
