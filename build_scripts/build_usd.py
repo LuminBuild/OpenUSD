@@ -1200,8 +1200,6 @@ OPENVDB_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs
 
 def InstallOpenVDB(context, force, buildArgs):
     openvdb_url = OPENVDB_URL
-    if MacOS() and not apple_utils.IsTargetArm(context):
-        openvdb_url = OPENVDB_INTEL_URL
 
     with CurrentWorkingDirectory(DownloadURL(openvdb_url, context, force)):
         extraArgs = [
