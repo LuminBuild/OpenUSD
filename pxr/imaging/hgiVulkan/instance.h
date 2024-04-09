@@ -43,6 +43,9 @@ public:
         return _hasPresentation;
     }
 
+    HGIVULKAN_API
+    PFN_vkGetInstanceProcAddr GetPFNInstancProcAddr();
+
 private:
     VkInstance _vkInstance;
     bool _hasPresentation;

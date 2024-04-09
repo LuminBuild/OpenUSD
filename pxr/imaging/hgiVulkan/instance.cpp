@@ -176,5 +176,10 @@ HgiVulkanInstance::GetVulkanInstance() const
     return _vkInstance;
 }
 
+PFN_vkGetInstanceProcAddr
+HgiVulkanInstance::GetPFNInstancProcAddr()
+{
+    return vkGetInstanceProcAddr;
+}
 
 PXR_NAMESPACE_CLOSE_SCOPE
