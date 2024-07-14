@@ -755,6 +755,9 @@ WARN_LOGFILE           =
 # to be ordered by "package" and low-to-high-level module order.
 
 INPUT                  = docs/doxygen/externalOverview.dox \
+                         docs/doxygen/developer_guides.dox \
+                         docs/doxygen/architecture-guides \
+                         docs/include/pxr/extras/imaging \
                          docs/include/pxr/base \
                          docs/include/pxr/usd \
                          docs/include/pxr/imaging \
@@ -1047,7 +1050,7 @@ IGNORE_PREFIX          =
 # If the GENERATE_HTML tag is set to YES doxygen will generate HTML output
 # The default value is: YES.
 
-GENERATE_HTML          = YES
+GENERATE_HTML          = @DOXYGEN_GENERATE_HTML@
 
 # The HTML_OUTPUT tag is used to specify where the HTML docs will be put. If a
 # relative path is entered the value of OUTPUT_DIRECTORY will be put in front of
@@ -2091,7 +2094,7 @@ HIDE_UNDOC_RELATIONS   = YES
 # set to NO
 # The default value is: NO.
 
-HAVE_DOT               = YES
+HAVE_DOT               = @DOXYGEN_GENERATE_HTML@
 
 # The DOT_NUM_THREADS specifies the number of dot invocations doxygen is allowed
 # to run in parallel. When set to 0 doxygen will base this on the number of
@@ -2352,6 +2355,7 @@ FULL_SIDEBAR = NO
 HTML_EXTRA_STYLESHEET  = docs/doxygen/doxygen-awesome-css/doxygen-awesome.css \
                          docs/doxygen/usd_style.css
 HTML_EXTRA_FILES  = docs/doxygen/doxygen-awesome-css/doxygen-awesome-darkmode-toggle.js \
-                    docs/doxygen/doxygen-awesome-css/doxygen-awesome-fragment-copy-button.js
+                    docs/doxygen/doxygen-awesome-css/doxygen-awesome-fragment-copy-button.js \ 
+                    docs/doxygen/doxygen-awesome-css/doxygen-awesome-paragraph-link.js
 # HTML_COLORSTYLE is a Doxygen 1.9.x config required for Doxygen Awesome
 HTML_COLORSTYLE = LIGHT

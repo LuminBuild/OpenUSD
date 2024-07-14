@@ -21,39 +21,38 @@
 // KIND, either express or implied. See the Apache License for the specific
 // language governing permissions and limitations under the Apache License.
 //
-
 #include "hdPrman/utils.h"
+
 #include "hdPrman/debugCodes.h"
+#include "hdPrman/renderParam.h" // HDPRMAN_SHUTTER{OPEN,CLOSE}_DEFAULT
+#include "hdPrman/rixStrings.h"
+#include "hdPrman/tokens.h"
 
 #include "pxr/base/arch/env.h"
 #include "pxr/base/arch/library.h"
 #include "pxr/base/gf/matrix4f.h"
-#include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec2d.h"
-#include "pxr/base/gf/vec3f.h"
+#include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3d.h"
-#include "pxr/base/gf/vec4f.h"
+#include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4d.h"
-#include "pxr/base/plug/registry.h"
+#include "pxr/base/gf/vec4f.h"
 #include "pxr/base/plug/plugin.h"
+#include "pxr/base/plug/registry.h"
 #include "pxr/base/tf/envSetting.h"
 #include "pxr/base/tf/getenv.h"
-#include "pxr/base/tf/pathUtils.h"  // Extract extension from tf token
+#include "pxr/base/tf/pathUtils.h"  // ARCH_PATH_LIST_SEP
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/array.h"
-#include "pxr/base/vt/visitValue.h"
 #include "pxr/base/vt/value.h"
+#include "pxr/base/vt/visitValue.h"
 #include "pxr/base/work/threadLimits.h"
-
+#include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hio/imageRegistry.h"
 #include "pxr/usd/ar/resolver.h"
 #include "pxr/usd/ndr/declare.h"
 #include "pxr/usd/sdf/assetPath.h"
-
-#include "pxr/imaging/hd/tokens.h"
-#include "pxr/imaging/hio/imageRegistry.h"
-
-#include "hdPrman/rixStrings.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -86,6 +85,9 @@ struct _VtValueToRtParamList
     bool operator()(const float &v) {
         return params->SetFloat(name, v);
     }
+    bool operator()(const long &v) {
+        return params->SetInteger(name, static_cast<int>(v));
+    }
     bool operator()(const double &v) {
         return params->SetFloat(name, static_cast<float>(v));
     }
@@ -102,6 +104,9 @@ struct _VtValueToRtParamList
     bool operator()(const GfVec2d &vd) {
         return (*this)(GfVec2f(vd));
     }
+    bool operator()(const GfVec3i &v) {
+        return params->SetIntegerArray(name, v.data(), 3); 
+    }
     bool operator()(const GfVec3f &v) {
         if (role == HdPrimvarRoleTokens->color) {
             return params->SetColor(name, RtColorRGB(v[0], v[1], v[2]));
@@ -117,6 +122,9 @@ struct _VtValueToRtParamList
     }
     bool operator()(const GfVec3d &vd) {
         return (*this)(GfVec3f(vd));
+    }
+    bool operator()(const GfVec4i &v) {
+        return params->SetIntegerArray(name, v.data(), 4); 
     }
     bool operator()(const GfVec4f &v) {
         return params->SetFloatArray(name, v.data(), 4);
@@ -145,6 +153,15 @@ struct _VtValueToRtParamList
     }
     bool operator()(const VtArray<float> &v) {
         return params->SetFloatArray(name, v.cdata(), v.size());
+    }
+    bool operator()(const VtArray<long> &vl) {
+        // convert long->int
+        VtArray<int> v;
+        v.resize(vl.size());
+        for (size_t i=0,n=vl.size(); i<n; ++i) {
+            v[i] = int(vl[i]);
+        }
+        return (*this)(v);
     }
     bool operator()(const VtArray<double> &vd) {
         // Convert double->float
@@ -222,7 +239,13 @@ struct _VtValueToRtParamList
     // String-like types
     //
     bool operator()(const TfToken &v) {
-        return params->SetString(name, RtUString(v.GetText()));
+        if (role == HdPrmanRileyAdditionalRoleTokens->colorReference) {
+            return params->SetColorReference(name, RtUString(v.GetText()));
+        } else if (role == HdPrmanRileyAdditionalRoleTokens->floatReference) {
+            return params->SetFloatReference(name, RtUString(v.GetText()));
+        } else {
+            return params->SetString(name, RtUString(v.GetText()));
+        }
     }
     bool operator()(const std::string &v) {
         return params->SetString(name, RtUString(v.c_str()));
@@ -338,6 +361,15 @@ struct _VtValueToRtPrimVar : _VtValueToRtParamList
         } else {
             return primvars->SetFloatDetail(name, v.cdata(), detail);
         }
+    }
+    bool operator()(const VtArray<long> &vl) {
+        // Convert double->int
+        VtArray<int> v;
+        v.resize(vl.size());
+        for (size_t i=0,n=vl.size(); i<n; ++i) {
+            v[i] = int(vl[i]);
+        }
+        return (*this)(v);
     }
     bool operator()(const VtArray<double> &vd) {
         // Convert double->float
@@ -487,24 +519,26 @@ _IsNativeRenderManFormat(std::string const &path)
 void
 _UpdateSearchPathsFromEnvironment(RtParamList& options)
 {
-    // searchpath:shader contains OSL (.oso)
-    std::string shaderpath = TfGetenv("RMAN_SHADERPATH");
-    if (!shaderpath.empty()) {
-        // RenderMan expects ':' as path separator, regardless of platform
-        NdrStringVec paths = TfStringSplit(shaderpath, ARCH_PATH_LIST_SEP);
-        shaderpath = TfStringJoin(paths, ":");
-        options.SetString( RixStr.k_searchpath_shader,
-                            RtUString(shaderpath.c_str()) );
-    } else {
+    // Default RenderMan installation under '$RMANTREE/lib/shaders'
+    std::string rmantree = TfGetenv("RMANTREE");
+    // Default hdPrman installation under 'plugins/usd/resources/shaders'
+    PlugPluginPtr plugin =
+        PlugRegistry::GetInstance().GetPluginWithName("hdPrmanLoader");
+
+    {
+        // searchpath:shader contains OSL (.oso)
+        std::string shaderpath = TfGetenv("RMAN_SHADERPATH");
         NdrStringVec paths;
-        // Default RenderMan installation under '$RMANTREE/lib/shaders'
-        std::string rmantree = TfGetenv("RMANTREE");
+        if (!shaderpath.empty()) {
+            // RenderMan expects ':' as path separator, regardless of platform
+            for (auto path : TfStringSplit(shaderpath, ARCH_PATH_LIST_SEP))
+            {
+                paths.push_back(path);
+            }
+        }
         if (!rmantree.empty()) {
             paths.push_back(TfStringCatPaths(rmantree, "lib/shaders"));
         }
-        // Default hdPrman installation under 'plugins/usd/resources/shaders'
-        PlugPluginPtr plugin =
-            PlugRegistry::GetInstance().GetPluginWithName("hdPrmanLoader");
         if (plugin)
         {
             std::string path = TfGetPathName(plugin->GetPath());
@@ -514,42 +548,42 @@ _UpdateSearchPathsFromEnvironment(RtParamList& options)
         }
         shaderpath = TfStringJoin(paths, ":");
         options.SetString( RixStr.k_searchpath_shader,
-                            RtUString(shaderpath.c_str()) );
+                           RtUString(shaderpath.c_str()) );
     }
 
-    // searchpath:rixplugin contains C++ (.so) plugins
-    std::string rixpluginpath = TfGetenv("RMAN_RIXPLUGINPATH");
-    if (!rixpluginpath.empty()) {
-        // RenderMan expects ':' as path separator, regardless of platform
-        NdrStringVec paths = TfStringSplit(rixpluginpath, ARCH_PATH_LIST_SEP);
-        rixpluginpath = TfStringJoin(paths, ":");
-        options.SetString( RixStr.k_searchpath_rixplugin,
-                            RtUString(rixpluginpath.c_str()) );
-    } else {
+    {
+        // searchpath:rixplugin contains C++ (.so) plugins
+        std::string rixpluginpath = TfGetenv("RMAN_RIXPLUGINPATH");
         NdrStringVec paths;
+        if (!rixpluginpath.empty()) {
+            // RenderMan expects ':' as path separator, regardless of platform
+            for (auto path : TfStringSplit(rixpluginpath, ARCH_PATH_LIST_SEP))
+            {
+                paths.push_back(path);
+            }
+        }
         // Default RenderMan installation under '$RMANTREE/lib/plugins'
-        std::string rmantree = TfGetenv("RMANTREE");
         if (!rmantree.empty()) {
             paths.push_back(TfStringCatPaths(rmantree, "lib/plugins"));
         }
         rixpluginpath = TfStringJoin(paths, ":");
         options.SetString( RixStr.k_searchpath_rixplugin,
-                            RtUString(rixpluginpath.c_str()) );
+                           RtUString(rixpluginpath.c_str()) );
     }
 
-    // searchpath:texture contains textures (.tex) and Rtx plugins (.so)
-    std::string texturepath = TfGetenv("RMAN_TEXTUREPATH");
-    if (!texturepath.empty()) {
-        // RenderMan expects ':' as path separator, regardless of platform
-        NdrStringVec paths = TfStringSplit(texturepath, ARCH_PATH_LIST_SEP);
-        texturepath = TfStringJoin(paths, ":");
-        options.SetString( RixStr.k_searchpath_texture,
-                            RtUString(texturepath.c_str()) );
-    } else {
+    {
+        // searchpath:texture contains textures (.tex) and Rtx plugins (.so)
+        std::string texturepath = TfGetenv("RMAN_TEXTUREPATH");
         NdrStringVec paths;
+        if (!texturepath.empty()) {
+            // RenderMan expects ':' as path separator, regardless of platform
+            for (auto path : TfStringSplit(texturepath, ARCH_PATH_LIST_SEP))
+            {
+                paths.push_back(path);
+            }
+        }
         // Default RenderMan installation under '$RMANTREE/lib/textures'
         // and '$RMANTREE/lib/plugins'
-        std::string rmantree = TfGetenv("RMANTREE");
         if (!rmantree.empty()) {
             paths.push_back(TfStringCatPaths(rmantree, "lib/textures"));
             paths.push_back(TfStringCatPaths(rmantree, "lib/plugins"));
@@ -557,8 +591,6 @@ _UpdateSearchPathsFromEnvironment(RtParamList& options)
         // Default hdPrman installation under 'plugins/usd'
         // We need the path to RtxHioImage and we assume that it lives in the
         // same directory as hdPrmanLoader
-        PlugPluginPtr plugin =
-            PlugRegistry::GetInstance().GetPluginWithName("hdPrmanLoader");
         if (plugin)
         {
             std::string path = TfGetPathName(plugin->GetPath());
@@ -568,16 +600,28 @@ _UpdateSearchPathsFromEnvironment(RtParamList& options)
         }
         texturepath = TfStringJoin(paths, ":");
         options.SetString( RixStr.k_searchpath_texture,
-                            RtUString(texturepath.c_str()) );
+                           RtUString(texturepath.c_str()) );
     }
 
-    std::string proceduralpath = TfGetenv("RMAN_PROCEDURALPATH");
-    if (!proceduralpath.empty()) {
-        // RenderMan expects ':' as path separator, regardless of platform
-        NdrStringVec paths = TfStringSplit(proceduralpath, ARCH_PATH_LIST_SEP);
+    {
+        std::string proceduralpath = TfGetenv("RMAN_PROCEDURALPATH");
+        NdrStringVec paths;
+        if (!proceduralpath.empty()) {
+            // RenderMan expects ':' as path separator, regardless of platform
+            for (std::string const& path : TfStringSplit(proceduralpath,
+                                                         ARCH_PATH_LIST_SEP))
+            {
+                paths.push_back(path);
+            }
+        }
+
+        // Default RenderMan installation under '$RMANTREE/lib/plugins'
+        if (!rmantree.empty()) {
+            paths.push_back(TfStringCatPaths(rmantree, "lib/plugins"));
+        }
         proceduralpath = TfStringJoin(paths, ":");
         options.SetString( RixStr.k_searchpath_procedural,
-                            RtUString(proceduralpath.c_str()) );
+                           RtUString(proceduralpath.c_str()) );
     }
 }
 
@@ -611,7 +655,8 @@ SetPrimVarFromVtValue(
     if (ARCH_UNLIKELY(!params)) {
         return false;
     }
-    return VtVisitValue(val, _VtValueToRtPrimVar(name, detail, role, params));
+    return VtVisitValue(val, _VtValueToRtPrimVar(
+        name, detail, role, params));
 }
 
 RtUString
@@ -674,6 +719,46 @@ PruneDeprecatedOptions(
 }
 
 RtParamList
+PruneBatchOnlyOptions(
+    const RtParamList &options)
+{
+    // The following should not be given to Riley::SetOptions()
+    // when doing an interactive render.
+    //
+    // XXX We use an explicit list here, but would it be better
+    // to do a prefix-check instead?
+    static std::vector<RtUString> const _batchOnlyRileyOptions = {
+        RixStr.k_checkpoint,
+        RixStr.k_checkpoint_asfinal,
+        RixStr.k_checkpoint_command,
+        RixStr.k_checkpoint_exitat,
+        RixStr.k_checkpoint_interval,
+        RixStr.k_checkpoint_keepfiles,
+        RixStr.k_exitat,
+        RixStr.k_statistics,
+        RixStr.k_statistics_displaceratios,
+        RixStr.k_statistics_endofframe,
+        RixStr.k_statistics_filename,
+        RixStr.k_statistics_level,
+        RixStr.k_statistics_maxdispwarnings,
+        RixStr.k_statistics_shaderprofile,
+        RixStr.k_statistics_stylesheet,
+        RixStr.k_statistics_texturestatslevel,
+        RixStr.k_statistics_xmlfilename
+        };
+
+    RtParamList prunedOptions = options;
+    for (auto name : _batchOnlyRileyOptions) {
+        uint32_t paramId;
+        if (prunedOptions.GetParamId(name, paramId)) {
+            prunedOptions.Remove(paramId);
+        }
+    }
+
+    return prunedOptions;
+}
+
+RtParamList
 GetDefaultRileyOptions()
 {
     RtParamList options;
@@ -696,9 +781,10 @@ GetDefaultRileyOptions()
     options.SetFloat(RixStr.k_Ri_PixelVariance, 0.001f);
     options.SetString(RixStr.k_bucket_order, RtUString("circle"));
     
-     // Default shutter settings from studio katana defaults:
-    // - /root.renderSettings.shutter{Open,Close}
-    float shutterInterval[2] = { 0.0f, 0.5f };
+    float shutterInterval[2] = {
+        HDPRMAN_SHUTTEROPEN_DEFAULT,
+        HDPRMAN_SHUTTERCLOSE_DEFAULT
+    };
     options.SetFloatArray(RixStr.k_Ri_Shutter, shutterInterval, 2);
 
     return options;
@@ -739,23 +825,6 @@ GetRileyOptionsFromEnvironment()
     return options;
 }
 
-RtParamList
-Compose(
-    RtParamList const &a,
-    RtParamList const &b)
-{
-    if (b.GetNumParams() == 0) {
-        return a;
-    }
-    if (a.GetNumParams() == 0) {
-        return b;
-    }
-
-    RtParamList result = b;
-    result.Update(a);
-    return result;
-}
-
-}
+} // namespace HdPrman_Utils
 
 PXR_NAMESPACE_CLOSE_SCOPE

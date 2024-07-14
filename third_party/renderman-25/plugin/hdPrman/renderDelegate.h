@@ -61,6 +61,8 @@ TF_DECLARE_PUBLIC_TOKENS(HdPrmanRenderSettingsTokens, HDPRMAN_API,
     (renderVars)                   \
     (renderVarIndices)             \
     (name)                         \
+    (sourceName)                   \
+    (sourceType)                   \
     (type)                         \
     (params)                       \
     (camera)
@@ -176,6 +178,11 @@ public:
     TfTokenVector GetRenderSettingsNamespaces() const override;
 #endif
 
+#if HD_API_VERSION >= 60
+    HDPRMAN_API
+    HdContainerDataSourceHandle GetCapabilities() const override;
+#endif
+
     HDPRMAN_API 
     void SetRenderSetting(TfToken const &key, VtValue const &value) override;
 
@@ -250,6 +257,9 @@ protected:
     std::unique_ptr<class HdPrman_TerminalSceneIndexObserver>
         _terminalObserver;
 #endif
+
+    struct _RileySceneIndices;
+    std::unique_ptr<_RileySceneIndices> _rileySceneIndices;
 
     HdResourceRegistrySharedPtr _resourceRegistry;
     HdRenderPassSharedPtr _renderPass;

@@ -85,6 +85,7 @@
 #include "pxr/base/tf/hashset.h"
 #include "pxr/base/tf/mallocTag.h"
 #include "pxr/base/tf/ostreamMethods.h"
+#include "pxr/base/tf/preprocessorUtilsLite.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/registryManager.h"
 #include "pxr/base/tf/scoped.h"
@@ -96,8 +97,6 @@
 #include "pxr/base/work/utils.h"
 #include "pxr/base/work/withScopedParallelism.h"
 
-#include <boost/optional.hpp>
-
 #include <tbb/spin_rw_mutex.h>
 #include <tbb/spin_mutex.h>
 
@@ -105,6 +104,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1036,7 +1036,7 @@ _OpenLayer(
     const std::string &filePath,
     const ArResolverContext &resolverContext = ArResolverContext())
 {
-    boost::optional<ArResolverContextBinder> binder;
+    std::optional<ArResolverContextBinder> binder;
     if (!resolverContext.IsEmpty())
         binder.emplace(resolverContext);
 
@@ -1178,8 +1178,8 @@ public:
 
 private:
     SdfLayerHandle _rootLayer;
-    boost::optional<SdfLayerHandle> _sessionLayer;
-    boost::optional<ArResolverContext> _pathResolverContext;
+    std::optional<SdfLayerHandle> _sessionLayer;
+    std::optional<ArResolverContext> _pathResolverContext;
     UsdStage::InitialLoadSet _initialLoadSet;
 };
 
@@ -2076,6 +2076,7 @@ _IsPrivateFieldKey(const TfToken& fieldKey)
     std::call_once(once, [](){
         // Composition keys.
         ignoredKeys.insert(SdfFieldKeys->InheritPaths);
+        ignoredKeys.insert(SdfFieldKeys->LayerRelocates);
         ignoredKeys.insert(SdfFieldKeys->Payload);
         ignoredKeys.insert(SdfFieldKeys->References);
         ignoredKeys.insert(SdfFieldKeys->Specializes);
@@ -2615,20 +2616,24 @@ UsdStage::SetPopulationMask(UsdStagePopulationMask const &mask)
 
 void
 UsdStage::ExpandPopulationMask(
+    Usd_PrimFlagsPredicate const &traversal,
     std::function<bool (UsdRelationship const &)> const &relPred,
     std::function<bool (UsdAttribute const &)> const &attrPred)
 {
-    if (GetPopulationMask().IncludesSubtree(SdfPath::AbsoluteRootPath()))
+    if (GetPopulationMask().IncludesSubtree(SdfPath::AbsoluteRootPath())) {
         return;
-
-    // Walk everything, calling UsdPrim::FindAllRelationshipTargetPaths() and
+    }
+    
+    // Walk everything, calling
+    // UsdPrim::FindAllRelationshipTarget/AttributeConnectionPaths() and
     // include them in the mask.  If the mask changes, call SetPopulationMask()
-    // and redo.  Continue until the mask ceases expansion.  
+    // and redo.  Continue until the mask ceases expansion.
     while (true) {
         auto root = GetPseudoRoot();
-        SdfPathVector
-            tgtPaths = root.FindAllRelationshipTargetPaths(relPred, false),
-            connPaths = root.FindAllAttributeConnectionPaths(attrPred, false);
+        SdfPathVector tgtPaths =
+            root.FindAllRelationshipTargetPaths(traversal, relPred, false);
+        SdfPathVector connPaths =
+            root.FindAllAttributeConnectionPaths(traversal, attrPred, false);
         
         tgtPaths.erase(remove_if(tgtPaths.begin(), tgtPaths.end(),
                                  [this](SdfPath const &path) {
@@ -2641,8 +2646,9 @@ UsdStage::ExpandPopulationMask(
                                  }),
                        connPaths.end());
         
-        if (tgtPaths.empty() && connPaths.empty())
+        if (tgtPaths.empty() && connPaths.empty()) {
             break;
+        }
 
         auto popMask = GetPopulationMask();
         for (auto const &path: tgtPaths) {
@@ -2653,6 +2659,14 @@ UsdStage::ExpandPopulationMask(
         }
         SetPopulationMask(popMask);
     }
+}
+
+void
+UsdStage::ExpandPopulationMask(
+    std::function<bool (UsdRelationship const &)> const &relPred,
+    std::function<bool (UsdAttribute const &)> const &attrPred)
+{
+    return ExpandPopulationMask(UsdPrimDefaultPredicate, relPred, attrPred);
 }
 
 // ------------------------------------------------------------------------- //
@@ -2773,7 +2787,8 @@ UsdStage::_InstantiatePrim(const SdfPath &primPath)
     Usd_PrimDataPtr p = new Usd_PrimData(this, primPath);
 
     // Insert entry into the map -- should always succeed.
-    TF_VERIFY(_primMap.emplace(primPath, p),
+    TF_VERIFY(_primMap.emplace(
+                  primPath, Usd_PrimDataIPtr{TfDelegatedCountIncrementTag, p}),
               "Newly instantiated prim <%s> already present in _primMap",
               primPath.GetText());
     return p;
@@ -3251,11 +3266,13 @@ UsdStage::_ComposeSubtreesInParallel(
                 }
             }
             catch (...) {
-                _dispatcher = boost::none;
+                _dispatcher->Wait();
+                _dispatcher = std::nullopt;
                 throw;
             }
             
-            _dispatcher = boost::none;
+            _dispatcher->Wait();
+            _dispatcher = std::nullopt;
         });
 }
 
@@ -3408,7 +3425,8 @@ UsdStage::_DestroyPrimsInParallel(const vector<SdfPath>& paths)
                 });
             }
         }
-        _dispatcher = boost::none;
+        _dispatcher->Wait();
+        _dispatcher = std::nullopt;
     });
 }
 
@@ -3931,6 +3949,7 @@ void
 UsdStage::MuteAndUnmuteLayers(const std::vector<std::string> &muteLayers,
                               const std::vector<std::string> &unmuteLayers)
 {
+    TRACE_FUNCTION();
     TfAutoMallocTag tag("Usd", _GetMallocTagId());
 
     PcpChanges changes;
@@ -3942,6 +3961,7 @@ UsdStage::MuteAndUnmuteLayers(const std::vector<std::string> &muteLayers,
 
     // Notify for layer muting/unmuting
     if (!newMutedLayers.empty() || !newUnMutedLayers.empty()) {
+        TRACE_FUNCTION_SCOPE("sending UsdNotice::LayerMutingChanged");
         UsdNotice::LayerMutingChanged(self, newMutedLayers, newUnMutedLayers)
             .Send(self);
     }
@@ -3954,8 +3974,14 @@ UsdStage::MuteAndUnmuteLayers(const std::vector<std::string> &muteLayers,
     _PathsToChangesMap resyncChanges;
     _Recompose(changes, &resyncChanges);
 
-    UsdNotice::ObjectsChanged(self, &resyncChanges).Send(self);
-    UsdNotice::StageContentsChanged(self).Send(self);
+    {
+        TRACE_FUNCTION_SCOPE("sending UsdNotice::ObjectsChanged");
+        UsdNotice::ObjectsChanged(self, &resyncChanges).Send(self);
+    }
+    {
+        TRACE_FUNCTION_SCOPE("sending UsdNotice::StageContentsChanged");
+        UsdNotice::StageContentsChanged(self).Send(self);
+    }
 }
 
 const std::vector<std::string>&
@@ -4656,6 +4682,8 @@ void
 UsdStage::_Recompose(const PcpChanges &changes,
                      T *pathsToRecompose)
 {
+    TRACE_FUNCTION();
+
     // Note: Calling changes.Apply() will result in recomputation of  
     // pcpPrimIndexes for changed prims, these get updated on the respective  
     // prims during _ComposeSubtreeImpl call. Using these outdated primIndexes
@@ -8406,12 +8434,13 @@ struct UsdStage::_ResolveInfoResolver
     {
         const SdfLayerOffset layerToStageOffset =
             _GetLayerToStageOffset(node, layer);
-        boost::optional<double> localTime;
+        std::optional<double> localTime;
         if (time) {
             localTime = layerToStageOffset.GetInverse() * (*time);
         }
 
-        if (_HasTimeSamples(layer, specPath, localTime.get_ptr(), 
+        if (_HasTimeSamples(layer, specPath,
+                            localTime ? std::addressof(*localTime) : nullptr,
                             &_extraInfo->lowerSample, 
                             &_extraInfo->upperSample)) {
             _resolveInfo->_source = UsdResolveInfoSourceTimeSamples;
@@ -9684,7 +9713,7 @@ std::string UsdDescribe(const UsdStageRefPtr &stage) {
 
 // Explicitly instantiate templated getters and setters for all Sdf value
 // types.
-#define _INSTANTIATE_GET(r, unused, elem)                               \
+#define _INSTANTIATE_GET(unused, elem)                                  \
     template bool UsdStage::_GetValue(                                  \
         UsdTimeCode, const UsdAttribute&,                               \
         SDF_VALUE_CPP_TYPE(elem)*) const;                               \
@@ -9706,7 +9735,7 @@ std::string UsdDescribe(const UsdStageRefPtr &stage) {
         UsdTimeCode, const UsdAttribute&,                               \
         const SDF_VALUE_CPP_ARRAY_TYPE(elem)&);
 
-BOOST_PP_SEQ_FOR_EACH(_INSTANTIATE_GET, ~, SDF_VALUE_TYPES)
+TF_PP_SEQ_FOR_EACH(_INSTANTIATE_GET, ~, SDF_VALUE_TYPES)
 #undef _INSTANTIATE_GET
 
 // In addition to the Sdf value types, _SetValue can also be called with an 

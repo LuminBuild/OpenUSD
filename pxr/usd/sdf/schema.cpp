@@ -28,6 +28,7 @@
 #include "pxr/usd/sdf/layerOffset.h"
 #include "pxr/usd/sdf/parserValueContext.h"
 #include "pxr/usd/sdf/pathExpression.h"
+#include "pxr/usd/sdf/pathParser.h"
 #include "pxr/usd/sdf/payload.h"
 #include "pxr/usd/sdf/reference.h"
 #include "pxr/usd/sdf/schemaTypeRegistration.h"
@@ -41,6 +42,7 @@
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/envSetting.h"
 #include "pxr/base/tf/instantiateSingleton.h"
+#include "pxr/base/tf/unicodeUtils.h"
 #include "pxr/base/trace/trace.h"
 #include "pxr/base/vt/dictionary.h"
 
@@ -393,6 +395,7 @@ SDF_VALIDATE_WRAPPER(Payload, SdfPayload);
 SDF_VALIDATE_WRAPPER(Reference, SdfReference);
 SDF_VALIDATE_WRAPPER(RelationshipTargetPath, SdfPath);
 SDF_VALIDATE_WRAPPER(RelocatesPath, SdfPath);
+SDF_VALIDATE_WRAPPER(Relocate, SdfRelocate);
 SDF_VALIDATE_WRAPPER(SpecializesPath, SdfPath);
 SDF_VALIDATE_WRAPPER(SubLayer, std::string);
 SDF_VALIDATE_WRAPPER(VariantIdentifier, std::string);
@@ -782,6 +785,8 @@ SdfSchemaBase::_RegisterStandardFields()
         .ReadOnly()
         .ListValueValidator(&_ValidateRelationshipTargetPath);
 
+    _DoRegisterField(SdfFieldKeys->LayerRelocates, SdfRelocates())
+        .ListValueValidator(&_ValidateRelocate);
     _DoRegisterField(SdfFieldKeys->Relocates, SdfRelocatesMap())
         .MapKeyValidator(&_ValidateRelocatesPath)
         .MapValueValidator(&_ValidateRelocatesPath);
@@ -860,6 +865,7 @@ SdfSchemaBase::_RegisterStandardFields()
         .MetadataField(SdfFieldKeys->StartFrame)
 
         .Field(SdfChildrenKeys->PrimChildren)
+        .Field(SdfFieldKeys->LayerRelocates)
         .Field(SdfFieldKeys->PrimOrder)
         .Field(SdfFieldKeys->SubLayers)
         .Field(SdfFieldKeys->SubLayerOffsets);
@@ -1287,28 +1293,34 @@ SdfSchemaBase::IsValidNamespacedIdentifier(const std::string& identifier)
 SdfAllowed
 SdfSchemaBase::IsValidVariantIdentifier(const std::string& identifier)
 {
-    // Allow [[:alnum:]_|\-]+ with an optional leading dot.
+    // use the path parser rules to determine validity of variant name
+    Sdf_PathParser::PPContext context;
+    bool result = false;
+    try
+    {
+        result = Sdf_PathParser::PEGTL_NS::parse<
+            Sdf_PathParser::PEGTL_NS::must<Sdf_PathParser::VariantName,
+            Sdf_PathParser::PEGTL_NS::eof>>(
+                Sdf_PathParser::PEGTL_NS::string_input<> {identifier, ""}, context);
 
-    std::string::const_iterator first = identifier.begin();
-    std::string::const_iterator last = identifier.end();
-
-    // Allow optional leading dot.
-    if (first != last && *first == '.') {
-        ++first;
-    }
-
-    for (; first != last; ++first) {
-        char c = *first;
-        if (!(isalnum(c) || (c == '_') || (c == '|') || (c == '-'))) {
+        if (!result)
+        {
             return SdfAllowed(TfStringPrintf(
-                    "\"%s\" is not a valid variant "
-                    "name due to '%c' at index %d",
-                    identifier.c_str(),
-                    c,
-                    (int)(first - identifier.begin())));
+                "\"%s\" is not a valid variant name",
+                identifier.c_str()));
         }
     }
+    catch(const Sdf_PathParser::PEGTL_NS::parse_error& e)
+    {
+        return SdfAllowed(TfStringPrintf(
+            "\"%s\" is not a valid variant "
+            "name due to '%s'",
+            identifier.c_str(),
+            e.what()));
 
+        return false;
+    }
+    
     return true;
 }
 
@@ -1340,6 +1352,19 @@ SdfSchemaBase::IsValidRelocatesPath(const SdfPath& path)
     if (!(path.IsPrimPath())) {
         return SdfAllowed("Relocate path <" + path.GetString() + 
                           "> must be a prim path");
+    }
+
+    return true;
+}
+
+SdfAllowed 
+SdfSchemaBase::IsValidRelocate(const SdfRelocate &relocate)
+{
+    if (SdfAllowed isValid = IsValidRelocatesPath(relocate.first); !isValid) {
+        return isValid;
+    }
+    if (SdfAllowed isValid = IsValidRelocatesPath(relocate.second); !isValid) {
+        return isValid;
     }
 
     return true;

@@ -26,19 +26,22 @@
 #include "pxr/usdImaging/usdImaging/drawModeSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/extentResolvingSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/flattenedDataSourceProviders.h"
+#include "pxr/usdImaging/usdImaging/materialBindingsResolvingSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/niPrototypePropagatingSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/piPrototypePropagatingSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/renderSettingsFlatteningSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/selectionSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/stageSceneIndex.h"
 #include "pxr/usdImaging/usdImaging/unloadedDrawModeSceneIndex.h"
-#include "pxr/usdImaging/usdImaging/modelSchema.h"
+
+#include "pxr/usdImaging/usdImaging/collectionMaterialBindingsSchema.h"
+#include "pxr/usdImaging/usdImaging/directMaterialBindingsSchema.h"
+#include "pxr/usdImaging/usdImaging/geomModelSchema.h"
 
 #include "pxr/imaging/hd/flatteningSceneIndex.h"
 #include "pxr/imaging/hd/overlayContainerDataSource.h"
 #include "pxr/imaging/hd/retainedDataSource.h"
 #include "pxr/imaging/hd/tokens.h"
-#include "pxr/imaging/hd/materialBindingsSchema.h"
 #include "pxr/imaging/hd/purposeSchema.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -108,21 +111,28 @@ UsdImagingCreateSceneIndices(
         UsdImagingExtentResolvingSceneIndex::New(
             sceneIndex, _ExtentResolvingSceneIndexInputArgs());
 
-    sceneIndex =
-        UsdImagingPiPrototypePropagatingSceneIndex::New(sceneIndex);
+    {
+        TRACE_FUNCTION_SCOPE("UsdImagingPiPrototypePropagatingSceneIndex");
+
+        sceneIndex =
+            UsdImagingPiPrototypePropagatingSceneIndex::New(sceneIndex);
+    }
 
     {
+        TRACE_FUNCTION_SCOPE("UsdImagingNiPrototypePropagatingSceneIndex");
+
         // UsdImagingNiPrototypePropagatingSceneIndex
 
         // Names of data sources that need to have the same values
         // across native instances for the instances be aggregated
         // together.
         static const TfTokenVector instanceDataSourceNames = {
-            HdMaterialBindingsSchema::GetSchemaToken(),
+            UsdImagingDirectMaterialBindingsSchema::GetSchemaToken(),
+            UsdImagingCollectionMaterialBindingsSchema::GetSchemaToken(),
             HdPurposeSchema::GetSchemaToken(),
             // We include model to aggregate scene indices
             // by draw mode.
-            UsdImagingModelSchema::GetSchemaToken()
+            UsdImagingGeomModelSchema::GetSchemaToken()
         };
 
         using SceneIndexAppendCallback =
@@ -156,6 +166,9 @@ UsdImagingCreateSceneIndices(
             UsdImagingNiPrototypePropagatingSceneIndex::New(
                 sceneIndex, instanceDataSourceNames, callback);
     }
+
+    sceneIndex = UsdImagingMaterialBindingsResolvingSceneIndex::New(
+                        sceneIndex, /* inputArgs = */ nullptr);
 
     sceneIndex = result.selectionSceneIndex =
         UsdImagingSelectionSceneIndex::New(sceneIndex);

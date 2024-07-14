@@ -73,7 +73,7 @@ class TestUsdFlattenLayerStack(unittest.TestCase):
             self.assertEqual( a.GetTimeSamples(),  [-9.0, 0.0] )
 
             # Layer offsets get folded into reference arcs
-            p = stage.GetPrimAtPath('/Sphere/ChildFromReference')
+            p = stage.GetPrimAtPath('/Sphere/RootReloChildFromReference')
             a = p.GetAttribute('timeSamplesAcrossRef')
             self.assertEqual( a.GetTimeSamples(),  [-9.0, 0.0] )
 
@@ -88,9 +88,9 @@ class TestUsdFlattenLayerStack(unittest.TestCase):
 
             # Confirm children from across various kinds of arcs.
             for childPath in [
-                '/Sphere/ChildFromPayload',
-                '/Sphere/ChildFromReference',
-                '/Sphere/ChildFromNestedVariant']:
+                '/Sphere/SubReloChildFromPayload',
+                '/Sphere/RootReloChildFromReference',
+                '/Sphere/RootReloChildFromNestedVariant']:
                 self.assertTrue(stage.GetPrimAtPath(childPath))
 
             # Confirm time samples coming from (offset) clips.
@@ -491,6 +491,23 @@ class TestUsdFlattenLayerStack(unittest.TestCase):
         self.assertEqual(
             stage.GetPrimAtPath(primPath).GetMetadata("assetInfo").get("assetRefArr"), 
             flatStage.GetPrimAtPath(primPath).GetMetadata("assetInfo").get("assetRefArr"))
+
+    def test_ListOpAdd(self):
+        src_stage = Usd.Stage.Open('listOp_add.usda')
+        src_layer_stack = src_stage._GetPcpCache().layerStack
+        layer = Usd.FlattenLayerStack(src_layer_stack)
+        
+        # Confirm that "add" targets were converted to "append"
+        attrSpec = layer.GetObjectAtPath('/B.test')
+        expectedTargets = Sdf.PathListOp()
+        expectedTargets.appendedItems = [Sdf.Path('/A')]
+        self.assertEqual(attrSpec.GetInfo('targetPaths'), expectedTargets)
+        
+        # Confirm that "explicit list" targets were stay explicit
+        attrSpec = layer.GetObjectAtPath('/C.test')
+        expectedTargets = Sdf.PathListOp()
+        expectedTargets.explicitItems = [Sdf.Path('/A')]
+        self.assertEqual(attrSpec.GetInfo('targetPaths'), expectedTargets)
 
 if __name__=="__main__":
     # Register test plugin defining timecode metadata fields.

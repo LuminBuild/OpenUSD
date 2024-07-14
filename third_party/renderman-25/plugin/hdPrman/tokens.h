@@ -31,14 +31,46 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 #define HD_PRMAN_TOKENS                         \
+    (meshLight)                                 \
     (meshLightSourceMesh)                       \
     (meshLightSourceVolume)                     \
     (sourceGeom)
 
 TF_DECLARE_PUBLIC_TOKENS(HdPrmanTokens, HDPRMAN_API, HD_PRMAN_TOKENS);
 
+///
+/// HdPrmanRileyPrimTypeTokens correspond to Riley::Create/Modify/Delete calls.
+///
+#define HD_PRMAN_RILEY_PRIM_TYPE_TOKENS                \
+    ((camera,             "riley:camera"))             \
+    ((clippingPlane,      "riley:clippingPlane"))      \
+    ((coordinateSystem,   "riley:coordinateSystem"))   \
+    ((displacement,       "riley:displacement"))      \
+    ((display,            "riley:display"))            \
+    ((displayFilter,      "riley:displayFilter"))      \
+    ((geometryInstance,   "riley:geometryInstance"))   \
+    ((geometryPrototype,  "riley:geometryPrototype"))  \
+    ((integrator,         "riley:integrator"))         \
+    ((lightInstance,      "riley:lightInstance"))      \
+    ((lightShader,        "riley:lightShader"))        \
+    ((material,           "riley:material"))           \
+    ((renderOutput,       "riley:renderOutput"))       \
+    ((renderTarget,       "riley:renderTarget"))       \
+    ((renderView,         "riley:renderView"))         \
+    ((sampleFilter,       "riley:sampleFilter"))
+
+TF_DECLARE_PUBLIC_TOKENS(HdPrmanRileyPrimTypeTokens, HDPRMAN_API,
+                         HD_PRMAN_RILEY_PRIM_TYPE_TOKENS);
+
+#define HD_PRMAN_RILEY_ADDITIONAL_ROLE_TOKENS         \
+    (colorReference)                                  \
+    (floatReference)
+
+TF_DECLARE_PUBLIC_TOKENS(HdPrmanRileyAdditionalRoleTokens, HDPRMAN_API,
+                         HD_PRMAN_RILEY_ADDITIONAL_ROLE_TOKENS);
+
 #define HD_PRMAN_PLUGIN_TOKENS \
-    ((velocityBlur,     "HdPrman_VelocityMotionBlurSceneIndexPlugin")) \
+    ((motionBlur,       "HdPrman_MotionBlurSceneIndexPlugin")) \
     ((extComp,          "HdPrman_ExtComputationPrimvarPruningSceneIndexPlugin"))
 
 TF_DECLARE_PUBLIC_TOKENS(HdPrmanPluginTokens, HD_PRMAN_PLUGIN_TOKENS);

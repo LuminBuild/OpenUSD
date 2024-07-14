@@ -28,6 +28,8 @@
 #include "pxr/imaging/hd/sprim.h"
 #include "Riley.h"
 
+#include <mutex>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 // For now, the procs in this file are boiler plate for when hdPrman needs to
@@ -56,23 +58,28 @@ public:
                       HdRenderParam   *renderParam,
                       HdDirtyBits     *dirtyBits) override;
 
+    /// Make sure this material has been updated in Riley.
+    void SyncToRiley(
+        HdSceneDelegate *sceneDelegate,
+        riley::Riley *riley);
+
     /// Returns the minimal set of dirty bits to place in the
     /// change tracker for use in the first sync of this prim.
     /// Typically this would be all dirty bits.
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
-    riley::ShadingNode *GetLightFilter() const { return _lightFilter; }
-
-    /// Return true if this light filter is valid.
-    bool IsValid() const;
-
     void Finalize(HdRenderParam *renderParam) override;
 
-private:
-    void _ResetLightFilter(HdPrman_RenderParam *renderParam);
+    riley::CoordinateSystemId GetCoordSysId();
 
-    const TfToken _hdLightFilterType;
-    riley::ShadingNode *_lightFilter;
+private:
+    void _SyncToRileyWithLock(
+        HdSceneDelegate *sceneDelegate,
+        riley::Riley *riley);
+
+    riley::CoordinateSystemId _coordSysId;
+    mutable std::mutex _syncToRileyMutex;
+    bool _rileyIsInSync;
 };
 
 

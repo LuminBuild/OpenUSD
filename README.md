@@ -111,18 +111,22 @@ You can download source code archives from [GitHub](https://www.github.com/Pixar
 
 ```
 > git clone https://github.com/PixarAnimationStudios/OpenUSD
-Cloning into 'USD'...
+Cloning into 'OpenUSD'...
 ```
 
 #### 3. Run the script
 
+Run the build_usd.py script to build and install USD. Note that the build script 
+is structured with an out-of-source build in mind -- installing a build into the  
+directory where the repository was cloned is untested. 
+
 ##### Linux:
 
 For example, the following will download, build, and install USD's dependencies,
-then build and install USD into `/usr/local/USD`.
+then build and install USD into `/path/to/my_usd_install_dir`.
 
 ```
-> python USD/build_scripts/build_usd.py /usr/local/USD
+> python OpenUSD/build_scripts/build_usd.py /path/to/my_usd_install_dir
 ```
 
 ##### MacOS:
@@ -131,10 +135,10 @@ In a terminal, run `xcode-select` to ensure command line developer tools are
 installed. Then run the script.
 
 For example, the following will download, build, and install USD's dependencies,
-then build and install USD into `/opt/local/USD`.
+then build and install USD into `/path/to/my_usd_install_dir`.
 
 ```
-> python USD/build_scripts/build_usd.py /opt/local/USD
+> python OpenUSD/build_scripts/build_usd.py /path/to/my_usd_install_dir
 ```
 
 ##### Windows:
@@ -146,10 +150,10 @@ command prompt and not the 32-bit (x86) command prompt.
 See https://docs.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line for more details.
 
 For example, the following will download, build, and install USD's dependencies,
-then build and install USD into `C:\USD`.
+then build and install USD into `C:\path\to\my_usd_install_dir`.
 
 ```
-C:\> python USD\build_scripts\build_usd.py "C:\USD"
+C:\> python OpenUSD\build_scripts\build_usd.py "C:\path\to\my_usd_install_dir"
 ```
 
 #### 4. Try it out
@@ -158,7 +162,7 @@ Set the environment variables specified by the script when it finishes and
 launch `usdview` with a sample asset.
 
 ```
-> usdview USD/extras/usd/tutorials/convertingLayerFormats/Sphere.usda
+> usdview OpenUSD/extras/usd/tutorials/convertingLayerFormats/Sphere.usda
 ```
 
 Contributing

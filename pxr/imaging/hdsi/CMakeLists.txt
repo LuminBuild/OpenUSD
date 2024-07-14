@@ -14,6 +14,7 @@ pxr_library(hdsi
         hf
         hd
         pxOsd
+        usdGeom
 
     PUBLIC_CLASSES
         coordSysPrimSceneIndex
@@ -24,12 +25,16 @@ pxr_library(hdsi
         materialPrimvarTransferSceneIndex
         nurbsApproximatingSceneIndex
         pinnedCurveExpandingSceneIndex
+        primManagingSceneIndexObserver
+        primTypeNoticeBatchingSceneIndex
         primTypePruningSceneIndex
         renderSettingsFilteringSceneIndex
         sceneGlobalsSceneIndex
+        tetMeshConversionSceneIndex
 
     PUBLIC_HEADERS
         api.h
+        version.h
 )
 
 pxr_build_test(testHdsiPinnedCurveExpandingSceneIndex

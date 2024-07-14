@@ -75,8 +75,8 @@ SdfPathExpression::SdfPathExpression(std::string const &inputStr,
     std::string errMsg;
     if (!inputStr.empty() &&
         !ParsePathExpression(inputStr, parseContext, this, &errMsg)) {
-        _parseError = errMsg;
         *this = {};
+        _parseError = errMsg;
         TF_RUNTIME_ERROR(errMsg);
     }
 }
@@ -336,6 +336,10 @@ SdfPathExpression::ResolveReferences(
     TfFunctionRef<
     SdfPathExpression (ExpressionReference const &)> resolve) &&
 {
+    if (IsEmpty()) {
+        return {};
+    }
+    
     std::vector<SdfPathExpression> stack;
     
     auto logic = [&stack](Op op, int argIndex) {
@@ -745,16 +749,28 @@ struct EmbeddedPredExpr : disable<PredExpr> {};
 struct BracedPredExpr
     : if_must<one<'{'>, OptSpaced<EmbeddedPredExpr>, one<'}'>> {};
 
-struct PathWildCard :
-    plus<sor<identifier_other, one<'[',']','!','-','?','*'>>> {};
+struct PrimPathWildCard :
+    seq<
+    plus<sor<identifier_other, one<'?','*'>>>,
+    opt<one<'['>,plus<sor<identifier_other, one<'[',']','!','-','?','*'>>>>
+    > {};
 
-struct PathPatternElemText : PathWildCard {};
+struct PropPathWildCard :
+    seq<
+    plus<sor<identifier_other, one<':','?','*'>>>,
+    opt<one<'['>,plus<sor<identifier_other, one<':','[',']','!','-','?','*'>>>>
+    > {};
 
-struct PathPatternElem
-    : if_then_else<PathPatternElemText, opt<BracedPredExpr>, BracedPredExpr> {};
+struct PrimPathPatternElemText : PrimPathWildCard {};
+struct PropPathPatternElemText : PropPathWildCard {};
 
-struct PrimPathPatternElem : PathPatternElem {};
-struct PropPathPatternElem : PathPatternElem {};
+struct PrimPathPatternElem
+    : if_then_else<PrimPathPatternElemText, opt<BracedPredExpr>,
+                   BracedPredExpr> {};
+
+struct PropPathPatternElem
+    : if_then_else<PropPathPatternElemText, opt<BracedPredExpr>,
+                   BracedPredExpr> {};
 
 struct PathPatternElems
     : seq<LookaheadList<PrimPathPatternElem, PathPatSep>,
@@ -815,7 +831,16 @@ struct PathExprAction<EmbeddedPredExpr>
 };
 
 template <>
-struct PathExprAction<PathPatternElemText>
+struct PathExprAction<PrimPathPatternElemText>
+{
+    template <class Input>
+    static void apply(Input const &in, Sdf_PathExprBuilder &builder) {
+        builder.GetPatternBuilder().curElemText = in.string();
+    }
+};
+
+template <>
+struct PathExprAction<PropPathPatternElemText>
 {
     template <class Input>
     static void apply(Input const &in, Sdf_PathExprBuilder &builder) {
