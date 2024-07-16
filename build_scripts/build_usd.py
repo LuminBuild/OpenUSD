@@ -1220,10 +1220,18 @@ BLOSC = Dependency("Blosc", InstallBLOSC, "include/blosc.h")
 ############################################################
 # OpenVDB
 
-OPENVDB_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs/tags/v10.0.1.zip"
+OPENVDB_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs/tags/v9.1.0.zip"
+
+# OpenVDB v9.1.0 requires TBB 2019.0 or above, but this script installs
+# TBB 2018 on macOS Intel systems for reasons documented above. So we
+# keep OpenVDB at the version specified for the VFX Reference Platform
+# CY2021, which is the last version that supported 2018.
+OPENVDB_INTEL_URL = "https://github.com/AcademySoftwareFoundation/openvdb/archive/refs/tags/v8.2.0.zip"
 
 def InstallOpenVDB(context, force, buildArgs):
     openvdb_url = OPENVDB_URL
+    if MacOS() and not apple_utils.IsTargetArm(context):
+        openvdb_url = OPENVDB_INTEL_URL
 
     with CurrentWorkingDirectory(DownloadURL(openvdb_url, context, force)):
         extraArgs = [
