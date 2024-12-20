@@ -367,7 +367,8 @@ HgiVulkanDevice::HgiVulkanDevice(HgiVulkanInstance* instance)
     allocatorInfo.pVulkanFunctions = &vmaVulkanFunctions;
 
     HGIVULKAN_VERIFY_VK_RESULT(
-        vmaCreateAllocator(&allocatorInfo, &_vmaAllocator);
+        vmaCreateAllocator(&allocatorInfo, &_vmaAllocator)
+    );
 
     //
     // Command Queue
