@@ -38,7 +38,10 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 TF_DEFINE_PRIVATE_TOKENS(
     _tokens,
+    (UsdPreviewSurface)
     (opacity)
+    (opacityMode)
+    (transparent)
     (opacityThreshold)
     (isPtex)
     (st)
@@ -222,7 +225,7 @@ _GetNodeFallbackValue(
 
         // If no default value was registered with Sdr for
         // the output, fallback to the type's default.
-        return output->GetTypeAsSdfType().first.GetDefaultValue();
+        return output->GetTypeAsSdfType().GetSdfType().GetDefaultValue();
     }
 
     return VtValue();
@@ -280,7 +283,7 @@ _GetParamFallbackValue(
             // If not default value was registered with Sdr for
             // the output, fallback to the type's default.
             if (out.IsEmpty()) {
-                out = input->GetTypeAsSdfType().first.GetDefaultValue();
+                out = input->GetTypeAsSdfType().GetSdfType().GetDefaultValue();
             }
 
             if (!out.IsEmpty()) return out;
@@ -1043,6 +1046,22 @@ _GatherMaterialParams(
         if (p.paramType != HdSt_MaterialParam::ParamTypeAdditionalPrimvar &&
             p.fallbackValue.IsEmpty()) {
             p.fallbackValue = _GetParamFallbackValue(network, node, p.name);
+            // The opacityMode input on a PreviewSurface material is a token
+            // input, this needs to be updated to an int VtValue for codegen.
+            // The values are updated such that transparent = 1 and presence = 0. 
+            if (node.nodeTypeId == _tokens->UsdPreviewSurface &&
+                p.name == _tokens->opacityMode) {
+                int paramInt = 1;
+                if (p.fallbackValue.IsHolding<std::string>()) {
+                    const std::string param = p.fallbackValue.Get<std::string>();
+                    paramInt = param == _tokens->transparent;
+                }
+                else if (p.fallbackValue.IsHolding<TfToken>()) {
+                    const TfToken param = p.fallbackValue.Get<TfToken>();
+                    paramInt = param == _tokens->transparent;
+                }
+                p.fallbackValue = VtValue(paramInt);
+            }
         }
     }
 
@@ -1082,7 +1101,6 @@ HdStMaterialNetwork::ProcessMaterialNetwork(
     HD_TRACE_FUNCTION();
 
     _fragmentSource.clear();
-    _geometrySource.clear();
     _displacementSource.clear();
     _materialMetadata.clear();
     _materialParams.clear();
@@ -1153,12 +1171,6 @@ std::string const&
 HdStMaterialNetwork::GetVolumeCode() const
 {
     return _volumeSource;
-}
-
-std::string const&
-HdStMaterialNetwork::GetGeometryCode() const
-{
-    return _geometrySource;
 }
 
 std::string const&

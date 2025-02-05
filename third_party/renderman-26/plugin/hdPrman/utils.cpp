@@ -79,16 +79,16 @@ struct _VtValueToRtParamList
     // Gf types
     //
     bool operator()(const GfVec2i &v) {
-        return params->SetIntegerArray(name, v.data(), 2); 
+        return params->SetIntegerArray(name, v.data(), 2);
     }
     bool operator()(const GfVec2f &v) {
-        return params->SetFloatArray(name, v.data(), 2); 
+        return params->SetFloatArray(name, v.data(), 2);
     }
     bool operator()(const GfVec2d &vd) {
         return (*this)(GfVec2f(vd));
     }
     bool operator()(const GfVec3i &v) {
-        return params->SetIntegerArray(name, v.data(), 3); 
+        return params->SetIntegerArray(name, v.data(), 3);
     }
     bool operator()(const GfVec3f &v) {
         if (role == HdPrimvarRoleTokens->color) {
@@ -107,7 +107,7 @@ struct _VtValueToRtParamList
         return (*this)(GfVec3f(vd));
     }
     bool operator()(const GfVec4i &v) {
-        return params->SetIntegerArray(name, v.data(), 4); 
+        return params->SetIntegerArray(name, v.data(), 4);
     }
     bool operator()(const GfVec4f &v) {
         return params->SetFloatArray(name, v.data(), 4);
@@ -160,7 +160,7 @@ struct _VtValueToRtParamList
     // Arrays of Gf types
     //
     bool operator()(const VtArray<GfVec2f> &v) {
-        return params->SetFloatArray(name,   
+        return params->SetFloatArray(name,
             reinterpret_cast<const float*>(v.cdata()), 2*v.size());
     }
     bool operator()(const VtArray<GfVec2d> &vd) {
@@ -236,12 +236,14 @@ struct _VtValueToRtParamList
     bool operator()(const SdfAssetPath &assetPath) {
         // Since we can't know how the texture will be consumed,
         // go with the default of flipping textures
+        // and that it doesn't want to be written to disk.
         const bool flipTexture = true;
+        const bool writeAsset = false;
         RtUString v = HdPrman_Utils::ResolveAssetToRtUString(
-            assetPath, flipTexture, _tokens->primvar.GetText());
+            assetPath, flipTexture, writeAsset, _tokens->primvar.GetText());
         return params->SetString(name, v);
     }
-    
+
     //
     // Arrays of string-like types
     //
@@ -270,12 +272,14 @@ struct _VtValueToRtParamList
         // Convert to RtUString.
         // Since we can't know how the texture will be consumed,
         // go with the default of flipping textures
+        // and that it doesn't want to be written to disk.
         const bool flipTexture = true;
+        const bool writeAsset = false;
         std::vector<RtUString> us;
         us.reserve(v.size());
         for (SdfAssetPath const& asset: v) {
-            us.push_back(HdPrman_Utils::ResolveAssetToRtUString(asset, flipTexture,
-                                                   _tokens->primvar.GetText()));
+            us.push_back(HdPrman_Utils::ResolveAssetToRtUString(
+                asset, flipTexture, writeAsset, _tokens->primvar.GetText()));
         }
         return (*this)(us);
     }
@@ -346,7 +350,7 @@ struct _VtValueToRtPrimVar : _VtValueToRtParamList
         }
     }
     bool operator()(const VtArray<long> &vl) {
-        // Convert double->int
+        // Convert long->int
         VtArray<int> v;
         v.resize(vl.size());
         for (size_t i=0,n=vl.size(); i<n; ++i) {
@@ -458,12 +462,14 @@ struct _VtValueToRtPrimVar : _VtValueToRtParamList
         // Convert to RtUString.
         // Since we can't know how the texture will be consumed,
         // go with the default of flipping textures
+        // and that it doesn't want to be written to disk.
         const bool flipTexture = true;
+        const bool writeAsset = false;
         std::vector<RtUString> us;
         us.reserve(v.size());
         for (SdfAssetPath const& asset: v) {
-            us.push_back(HdPrman_Utils::ResolveAssetToRtUString(asset, flipTexture,
-                                                   _tokens->primvar.GetText()));
+            us.push_back(HdPrman_Utils::ResolveAssetToRtUString(
+                asset, flipTexture, writeAsset, _tokens->primvar.GetText()));
         }
         return (*this)(us);
     }
@@ -668,6 +674,7 @@ RtUString
 ResolveAssetToRtUString(
     SdfAssetPath const &asset,
     bool flipTexture,
+    bool writeAsset,
     char const *debugNodeType /* = nullptr*/)
 {
 
@@ -681,20 +688,22 @@ ResolveAssetToRtUString(
 
     // Use the RtxHioImage plugin for resolved paths that are not
     // native RenderMan formats, but which Hio can read.
+    // We don't want to do this for assets will be written out
+    // instead of read (for example the PxrBakeTexture node).
     // Note: we cannot read tex files from USDZ until we add support
     // to RtxHioImage (or another Rtx plugin) for this.
     // FUTURE NOTE: When we want to support primvar substitutions with
     // the use of non-tex textures, the following clause can no longer
-    // be an "else if" (because such paths won't ArResolve), and we may 
+    // be an "else if" (because such paths won't ArResolve), and we may
     // not be able to even do an extension check...
-    else if (!_IsNativeRenderManFormat(v) &&
+    else if (!writeAsset && !_IsNativeRenderManFormat(v) &&
              imageRegistry.IsSupportedImageFile(v)) {
         v = "rtxplugin:RtxHioImage" ARCH_LIBRARY_SUFFIX
             "?filename=" + v + (flipTexture ? "" : "&flipped=false");
     }
 
     TF_DEBUG(HDPRMAN_IMAGE_ASSET_RESOLVE)
-        .Msg("Resolved %s asset path: %s\n", 
+        .Msg("Resolved %s asset path: %s\n",
              debugNodeType ? debugNodeType : "image",
              v.c_str());
 
@@ -707,8 +716,8 @@ PruneDeprecatedOptions(
 {
     // The following should not be given to Riley::SetOptions() anymore.
     static std::vector<RtUString> const _deprecatedRileyOptions = {
-        RixStr.k_Ri_PixelFilterName, 
-        RixStr.k_hider_pixelfiltermode, 
+        RixStr.k_Ri_PixelFilterName,
+        RixStr.k_hider_pixelfiltermode,
         RixStr.k_Ri_PixelFilterWidth,
         RixStr.k_Ri_ScreenWindow};
 
@@ -785,7 +794,7 @@ GetDefaultRileyOptions()
     options.SetFloat(RixStr.k_Ri_FormatPixelAspectRatio, 1.0f);
     options.SetFloat(RixStr.k_Ri_PixelVariance, 0.001f);
     options.SetString(RixStr.k_bucket_order, RtUString("circle"));
-    
+
     float shutterInterval[2] = {
         HDPRMAN_SHUTTEROPEN_DEFAULT,
         HDPRMAN_SHUTTERCLOSE_DEFAULT
@@ -817,7 +826,9 @@ GetRileyOptionsFromEnvironment()
     }
 
     const bool disableJitter = TfGetEnvSetting(HD_PRMAN_DISABLE_HIDER_JITTER);
-    options.SetInteger(RixStr.k_hider_jitter, !disableJitter);
+    if (disableJitter) {
+        options.SetInteger(RixStr.k_hider_jitter, !disableJitter);
+    }
 
     if (ArchHasEnv("HD_PRMAN_MAX_SAMPLES")) {
         const int maxSamples = TfGetenvInt("HD_PRMAN_MAX_SAMPLES", 64);

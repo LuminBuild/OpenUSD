@@ -13,18 +13,25 @@
 #include "pxr/usd/sdf/pySpec.h"
 #include "pxr/usd/sdf/types.h"
 
-#include <boost/python.hpp>
-
-using namespace boost::python;
+#include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+using namespace pxr_boost::python;
+
 void wrapRelationshipSpec()
-{    
+{
+    def("CreateRelationshipInLayer", SdfCreateRelationshipInLayer,
+        (arg("layer"), arg("relPath"),
+         arg("variability")=SdfVariabilityVarying, arg("isCustom")=false));
+    def("JustCreateRelationshipInLayer", SdfJustCreateRelationshipInLayer,
+        (arg("layer"), arg("relPath"),
+         arg("variability")=SdfVariabilityVarying, arg("isCustom")=false));
+
     typedef SdfRelationshipSpec This;
 
     class_<This, SdfHandle<This>, 
-           bases<SdfPropertySpec>, boost::noncopyable>
+           bases<SdfPropertySpec>, noncopyable>
         ("RelationshipSpec", no_init)
         
         .def(SdfPySpec())

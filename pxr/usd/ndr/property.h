@@ -9,9 +9,14 @@
 #define PXR_USD_NDR_PROPERTY_H
 
 /// \file ndr/property.h
+///
+/// \deprecated
+/// All Ndr objects are deprecated in favor of the corresponding Sdr objects
+/// in sdr/property.h
 
 #include "pxr/pxr.h"
 #include "pxr/usd/ndr/api.h"
+#include "pxr/usd/ndr/sdfTypeIndicator.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/value.h"
 #include "pxr/usd/ndr/declare.h"
@@ -30,6 +35,9 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// In almost all cases, this class will not be used directly. More specialized
 /// properties can be created that derive from `NdrProperty`; those specialized
 /// properties can add their own domain-specific data and methods.
+///
+/// \deprecated
+/// Deprecated in favor of SdrShaderProperty
 class NdrProperty
 {
 public:
@@ -120,6 +128,10 @@ public:
     virtual bool IsConnectable() const;
 
     /// Determines if this property can be connected to the specified property.
+    ///
+    /// \deprecated
+    /// Deprecated in favor of
+    /// SdrShaderProperty::CanConnectTo(SdrShaderProperty)
     NDR_API
     virtual bool CanConnectTo(const NdrProperty& other) const;
 
@@ -129,14 +141,15 @@ public:
     /// \name Utilities
     /// @{
 
-    /// Converts the property's type from `GetType()` into a `SdfValueTypeName`.
+    /// Converts the property's type from `GetType()` into a
+    /// `NdrSdfTypeIndicator`.
     ///
     /// Two scenarios can result: an exact mapping from property type to Sdf
-    /// type, and an inexact mapping. In the first scenario, the first element
-    /// in the pair will be the cleanly-mapped Sdf type, and the second element,
-    /// a TfToken, will be empty. In the second scenario, the Sdf type will be
-    /// set to `Token` to indicate an unclean mapping, and the second element
-    /// will be set to the original type returned by `GetType()`.
+    /// type, and an inexact mapping. In the first scenario,
+    /// NdrSdfTypeIndicator will contain a cleanly-mapped Sdf type. In the
+    /// second scenario, the NdrSdfTypeIndicator will contain an Sdf type
+    /// set to `Token` to indicate an unclean mapping, and
+    /// NdrSdfTypeIndicator::HasSdfType will return false.
     ///
     /// This base property class is generic and cannot know ahead of time how to
     /// perform this mapping reliably, thus it will always fall into the second
@@ -144,7 +157,7 @@ public:
     ///
     /// \sa GetDefaultValueAsSdfType()
     NDR_API
-    virtual const NdrSdfTypeIndicator GetTypeAsSdfType() const;
+    virtual NdrSdfTypeIndicator GetTypeAsSdfType() const;
 
     /// Provides default value corresponding to the SdfValueTypeName returned 
     /// by GetTypeAsSdfType. 

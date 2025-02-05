@@ -15,6 +15,22 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+// Checks whether t0 and t1 are equal when interpreted as time codes (similar
+// to UsdTimeCode), that is the default time is encoded as NaN.
+static
+bool _IsEqualTimeCode(const double t0, const double t1)
+{
+    // a == NaN is always false. So catch the case where both
+    // are NaN first.
+    if (std::isnan(t0) && std::isnan(t1)) {
+        return true;
+    }
+
+    // Normal comparison. Note that if only one is NaN, this still
+    // returns false.
+    return t0 == t1;
+}
+
 // -----------------------------------------------------------------------------
 // _SceneGlobalsDataSource
 // -----------------------------------------------------------------------------
@@ -42,7 +58,8 @@ _SceneGlobalsDataSource::GetNames()
     static const TfTokenVector names = {
         HdSceneGlobalsSchemaTokens->activeRenderPassPrim,
         HdSceneGlobalsSchemaTokens->activeRenderSettingsPrim,
-        HdSceneGlobalsSchemaTokens->currentFrame
+        HdSceneGlobalsSchemaTokens->currentFrame,
+        HdSceneGlobalsSchemaTokens->sceneStateId
     };
 
     return names;
@@ -62,6 +79,10 @@ _SceneGlobalsDataSource::Get(const TfToken &name)
     if (name == HdSceneGlobalsSchemaTokens->currentFrame) {
         const double timeCode = _si->_time;
         return HdRetainedTypedSampledDataSource<double>::New(timeCode);
+    }
+    if (name == HdSceneGlobalsSchemaTokens->sceneStateId) {
+        const int sceneStateId = _si->_sceneStateId;
+        return HdRetainedTypedSampledDataSource<int>::New(sceneStateId);
     }
 
     return nullptr;
@@ -121,7 +142,7 @@ HdsiSceneGlobalsSceneIndex::SetCurrentFrame(const double &time)
 {
     // XXX We might need to add a flag to force dirtying of the Frame locator 
     // even if the time has not changed 
-    if (_time == time) {
+    if (_IsEqualTimeCode(_time, time)) {
         return;
     }
 
@@ -134,6 +155,21 @@ HdsiSceneGlobalsSceneIndex::SetCurrentFrame(const double &time)
     }
 }
 
+void
+HdsiSceneGlobalsSceneIndex::SetSceneStateId(const int &id)
+{
+    if (_sceneStateId == id) {
+        return;
+    }
+
+    _sceneStateId = id;
+
+    if (_IsObserved()) {
+        _SendPrimsDirtied({{
+            HdSceneGlobalsSchema::GetDefaultPrimPath(),
+            HdSceneGlobalsSchema::GetSceneStateIdLocator()}});
+    }
+}
 
 HdSceneIndexPrim
 HdsiSceneGlobalsSceneIndex::GetPrim(const SdfPath &primPath) const

@@ -53,9 +53,16 @@ TF_DECLARE_PUBLIC_TOKENS(HdPrmanRileyPrimTypeTokens, HDPRMAN_API,
 TF_DECLARE_PUBLIC_TOKENS(HdPrmanRileyAdditionalRoleTokens, HDPRMAN_API,
                          HD_PRMAN_RILEY_ADDITIONAL_ROLE_TOKENS);
 
+#define HD_PRMAN_RENDER_PARAM_TOKENS \
+    (sceneStateId)
+
+TF_DECLARE_PUBLIC_TOKENS(HdPrmanRenderParamTokens,
+                         HD_PRMAN_RENDER_PARAM_TOKENS);
+
 #define HD_PRMAN_PLUGIN_TOKENS \
     ((motionBlur,       "HdPrman_MotionBlurSceneIndexPlugin")) \
-    ((extComp,          "HdPrman_ExtComputationPrimvarPruningSceneIndexPlugin"))
+    ((extComp,          "HdPrman_ExtComputationPrimvarPruningSceneIndexPlugin")) \
+    ((retesselation,    "HdPrman_RetesselationSceneIndexPlugin"))
 
 TF_DECLARE_PUBLIC_TOKENS(HdPrmanPluginTokens, HD_PRMAN_PLUGIN_TOKENS);
 

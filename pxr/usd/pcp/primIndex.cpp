@@ -9,6 +9,7 @@
 #include "pxr/usd/pcp/primIndex.h"
 #include "pxr/usd/pcp/arc.h"
 #include "pxr/usd/pcp/cache.h"
+#include "pxr/usd/pcp/changes.h"
 #include "pxr/usd/pcp/dynamicFileFormatContext.h"
 #include "pxr/usd/pcp/composeSite.h"
 #include "pxr/usd/pcp/debugCodes.h"
@@ -53,21 +54,11 @@ using std::vector;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-TF_DEFINE_ENV_SETTING(
-    MENV30_ENABLE_NEW_DEFAULT_STANDIN_BEHAVIOR, true,
-    "If enabled then standin preference is weakest opinion.");
-
 static inline PcpPrimIndex const *
 _GetOriginatingIndex(PcpPrimIndex_StackFrame *previousFrame,
                      PcpPrimIndexOutputs *outputs) {
     return ARCH_UNLIKELY(previousFrame) ?
         previousFrame->originatingIndex : &outputs->primIndex;
-}
-
-bool
-PcpIsNewDefaultStandinBehaviorEnabled()
-{
-    return TfGetEnvSetting(MENV30_ENABLE_NEW_DEFAULT_STANDIN_BEHAVIOR);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -2276,21 +2267,19 @@ _EvalRefOrPayloadArcs(PcpNodeRef node,
             layerStack = indexer->inputs.cache->ComputeLayerStack( 
                 layerStackIdentifier, &indexer->outputs->allErrors);
 
-            if (!PcpIsTimeScalingForLayerTimeCodesPerSecondDisabled()) {
-                // If the referenced or payloaded layer has a different TCPS
-                // than the source layer that introduces it, we apply the time
-                // scale between these TCPS values to the layer offset.
-                // Note that if the introducing layer is a layer stack sublayer,
-                // any TCPS scaling from the layer stack will already have been
-                // applied to the layer offset for the reference/payload.
-                const double srcTimeCodesPerSecond = 
-                    srcLayer->GetTimeCodesPerSecond();
-                const double destTimeCodesPerSecond =
-                    layerStack->GetTimeCodesPerSecond();
-                if (srcTimeCodesPerSecond != destTimeCodesPerSecond) {
-                    layerOffset.SetScale(layerOffset.GetScale() * 
-                        srcTimeCodesPerSecond / destTimeCodesPerSecond);
-                }
+            // If the referenced or payloaded layer has a different TCPS
+            // than the source layer that introduces it, we apply the time
+            // scale between these TCPS values to the layer offset.
+            // Note that if the introducing layer is a layer stack sublayer,
+            // any TCPS scaling from the layer stack will already have been
+            // applied to the layer offset for the reference/payload.
+            const double srcTimeCodesPerSecond = 
+                srcLayer->GetTimeCodesPerSecond();
+            const double destTimeCodesPerSecond =
+                layerStack->GetTimeCodesPerSecond();
+            if (srcTimeCodesPerSecond != destTimeCodesPerSecond) {
+                layerOffset.SetScale(layerOffset.GetScale() * 
+                    srcTimeCodesPerSecond / destTimeCodesPerSecond);
             }
         }
 
@@ -2763,11 +2752,15 @@ _EvalNodeRelocations(
         Pcp_FormatSite(node.GetSite()).c_str());
 
     // Unlike other tasks, we skip processing if this node can't contribute 
-    // specs, but only if this node was introduced at this level at namespace.
-    // This additional check is needed because a descendant node might not
-    // have any specs and thus be marked as culled, but still have relocates
-    // that affect that node.
-    if (!node.CanContributeSpecs() && node.GetDepthBelowIntroduction() == 0) {
+    // specs.
+    //
+    // Note that this check relies on the fact that descendant nodes without any
+    // specs are not marked as culled until we're done building the prim index,
+    // as nodes without specs can still have relocates that affect that node.
+    // This fact makes sure that we are only skipping nodes that are truly 
+    // culled for reasons such as being elided due to another relocates node
+    // that throws away ancestral opinions.
+    if (!node.CanContributeSpecs()) {
         return;
     }
 
@@ -4214,99 +4207,6 @@ _ComposeVariantSelection(
     }
 }
 
-static bool
-_ShouldUseVariantFallback(
-    const Pcp_PrimIndexer *indexer,
-    const std::string& vset,
-    const std::string& vsel,
-    const std::string& vselFallback,
-    const PcpNodeRef &nodeWithVsel)
-{
-    // Can't use fallback if we don't have one.
-    if (vselFallback.empty()) {
-        return false;
-    }
-
-    // If there's no variant selected then use the default.
-    if (vsel.empty()) {
-        return true;
-    }
-
-    // The "standin" variant set has special behavior, below.
-    // All other variant sets default when there is no selection.
-    //
-    // XXX This logic can be simpler when we remove the old standin stuff
-    if (vset != "standin") {
-        return false;
-    }
-
-    // If we're using the new behavior then the preferences can't win over
-    // the opinion in vsel.
-    if (PcpIsNewDefaultStandinBehaviorEnabled()) {
-        return false;
-    }
-
-    // From here down we're trying to match the Csd policy, which can
-    // be rather peculiar.  See bugs 29039 and 32264 for history that
-    // lead to some of these policies.
-
-    // If nodeWithVsel is a variant node that makes a selection for vset,
-    // it structurally represents the fact that we have already decided
-    // which variant selection to use for vset in this primIndex.  In
-    // this case, we do not want to apply standin preferences, because
-    // we will have already applied them.
-    //
-    // (Applying the policy again here could give us an incorrect result,
-    // because this might be a different nodeWithVsel than was used
-    // originally to apply the policy.)
-    if (nodeWithVsel.GetArcType() == PcpArcTypeVariant      &&
-        nodeWithVsel.GetPath().IsPrimVariantSelectionPath() &&
-        nodeWithVsel.GetPath().GetVariantSelection().first == vset) {
-        return false;
-    }
-
-    // Use the standin preference if the authored selection came from
-    // inside the payload.
-    for (PcpNodeRef n = nodeWithVsel; n; n = n.GetParentNode()) {
-        if (n.GetArcType() == PcpArcTypePayload) {
-            return true;
-        }
-    }
-
-    // Use vsel if it came from a session layer, otherwise check the
-    // standin preferences. For efficiency, we iterate over the full
-    // layer stack instead of using PcpLayerStack::GetSessionLayerStack.
-    const SdfLayerHandle rootLayer = 
-        indexer->rootSite.layerStack->GetIdentifier().rootLayer;
-    TF_FOR_ALL(layer, indexer->rootSite.layerStack->GetLayers()) {
-        if (*layer == rootLayer) {
-            break;
-        }
-
-        static const TfToken field = SdfFieldKeys->VariantSelection;
-
-        const VtValue& value =
-            (*layer)->GetField(indexer->rootSite.path, field);
-        if (value.IsHolding<SdfVariantSelectionMap>()) {
-            const SdfVariantSelectionMap & vselMap =
-                value.UncheckedGet<SdfVariantSelectionMap>();
-            SdfVariantSelectionMap::const_iterator i = vselMap.find(vset);
-            if (i != vselMap.end() && i->second == vsel) {
-                // Standin selection came from the session layer.
-                return false;
-            }
-        }
-    }
-
-    // If we don't have a standin selection in the root node then check
-    // the standin preferences.
-    if (nodeWithVsel.GetArcType() != PcpArcTypeRoot) {
-        return true;
-    }
-
-    return false;
-}
-
 static std::string
 _ChooseBestFallbackAmongOptions(
     const std::string &vset,
@@ -4533,52 +4433,20 @@ _EvalNodeAuthoredVariant(
         return;
     }
 
-    // Compose options.
-    std::set<std::string> vsetOptions;
-    PcpComposeSiteVariantSetOptions(
-        node.GetLayerStack(), vsetPath, vset, &vsetOptions);
-
-    // Determine what the fallback selection would be.
-    // Generally speaking, authoring opinions win over fallbacks, however if
-    // MENV30_ENABLE_NEW_DEFAULT_STANDIN_BEHAVIOR==false then that is not
-    // always the case, and we must check the fallback here first.
-    // TODO Remove this once we phase out the old behavior!
-    const std::string vselFallback =
-        _ChooseBestFallbackAmongOptions( vset, vsetOptions,
-                                         *indexer->inputs.variantFallbacks );
-    if (!vselFallback.empty()) {
-        PCP_INDEXING_MSG(
-            indexer, node, "Found fallback {%s=%s}",
-            vset.c_str(),
-            vselFallback.c_str());
-    }
-
     // Determine the authored variant selection for this set, if any.
     std::string vsel;
     PcpNodeRef nodeWithVsel;
     _ComposeVariantSelection(node, vsetPath.StripAllVariantSelections(),
                              indexer, vset, &vsel, &nodeWithVsel);
 
-    // Check if we should use the fallback
-    if (_ShouldUseVariantFallback(indexer, vset, vsel, vselFallback,
-                                  nodeWithVsel)) {
+    // If no variant was explicitly chosen, check if we should use the
+    // fallback.
+    if (vsel.empty()) {
         PCP_INDEXING_MSG(indexer, node, "Deferring to variant fallback");
         indexer->AddTask(Task(
             (isAncestral ?
                 Task::Type::EvalNodeAncestralVariantFallback :
                 Task::Type::EvalNodeVariantFallback),
-            node, vsetPath, vset, vsetNum));
-        return;
-    }
-    // If no variant was chosen, do not expand this variant set.
-    if (vsel.empty()) {
-        PCP_INDEXING_MSG(indexer, node,
-                         "No variant selection found for set '%s'",
-                         vset.c_str());
-        indexer->AddTask(Task(
-            (isAncestral ? 
-                Task::Type::EvalNodeAncestralVariantNoneFound :
-                Task::Type::EvalNodeVariantNoneFound),
             node, vsetPath, vset, vsetNum));
         return;
     }
@@ -4715,7 +4583,11 @@ _EnforcePermissions(
 }
 
 void
-Pcp_RescanForSpecs(PcpPrimIndex *index, bool usd, bool updateHasSpecs)
+Pcp_RescanForSpecs(
+    PcpPrimIndex *index,
+    bool usd,
+    bool updateHasSpecs,
+    const PcpCacheChanges *cacheChanges = nullptr)
 {
     TfAutoMallocTag2 tag("Pcp", "Pcp_RescanForSpecs");
 
@@ -4724,7 +4596,10 @@ Pcp_RescanForSpecs(PcpPrimIndex *index, bool usd, bool updateHasSpecs)
         // We do need to update the HasSpecs flag on nodes, however.
         if (updateHasSpecs) {
             TF_FOR_ALL(nodeIt, index->GetNodeRange()) {
-                nodeIt->SetHasSpecs(PcpComposeSiteHasPrimSpecs(*nodeIt));
+                auto node = *nodeIt;
+                nodeIt->SetHasSpecs(PcpComposeSiteHasPrimSpecs(
+                    node.GetLayerStack(), node.GetPath(), 
+                    cacheChanges->layersAffectedByMutingOrRemoval));
             }
         }
     } else {
@@ -4738,7 +4613,10 @@ Pcp_RescanForSpecs(PcpPrimIndex *index, bool usd, bool updateHasSpecs)
                     node.GetLayerStack()->GetLayers();
                 const SdfPath& path = node.GetPath();
                 for (size_t i = 0, n = layers.size(); i != n; ++i) {
-                    if (layers[i]->HasSpec(path)) {
+                    if (layers[i]->HasSpec(path) &&
+                        (!cacheChanges ||
+                          cacheChanges->layersAffectedByMutingOrRemoval
+                            .count(layers[i]) == 0)) {
                         nodeHasSpecs = true;
                         primSites.push_back(node.GetCompressedSdSite(i));
                     }
@@ -5786,13 +5664,14 @@ private:
 
 static void
 _ComposePrimChildNamesForInstance( const PcpPrimIndex& primIndex,
+                                   const PcpNodeRef &subtreeStartNode,
                                    TfTokenVector *nameOrder,
                                    PcpTokenSet *nameSet,
                                    PcpTokenSet *prohibitedNameSet )
 {
     Pcp_PrimChildNameVisitor visitor(
         primIndex, nameOrder, nameSet, prohibitedNameSet);
-    Pcp_TraverseInstanceableWeakToStrong(primIndex, &visitor);
+    Pcp_TraverseInstanceableWeakToStrong(subtreeStartNode, &visitor);
 }
 
 static void
@@ -5821,27 +5700,26 @@ _ComposePrimPropertyNames( const PcpPrimIndex& primIndex,
     }
 }
 
-void
-PcpPrimIndex::ComputePrimChildNames( TfTokenVector *nameOrder,
-                                     PcpTokenSet *prohibitedNameSet ) const
+static void 
+_ComputePrimChildNamesInSubtreeImpl(
+    const PcpPrimIndex &primIndex,
+    const PcpNodeRef &subtreeRootNode,
+    TfTokenVector *nameOrder,
+    PcpTokenSet *prohibitedNameSet)
 {
-    if (!_graph) {
-        return;
-    }
-
     TRACE_FUNCTION();
 
     // Provide a set with any existing nameOrder contents.
     PcpTokenSet nameSet(nameOrder->begin(), nameOrder->end());
 
     // Walk the graph to compose prim child names.
-    if (IsInstanceable()) {
+    if (primIndex.IsInstanceable()) {
         _ComposePrimChildNamesForInstance(
-            *this, nameOrder, &nameSet, prohibitedNameSet);
+            primIndex, subtreeRootNode, nameOrder, &nameSet, prohibitedNameSet);
     }
     else {
         _ComposePrimChildNames(
-            *this, GetRootNode(), nameOrder, &nameSet, prohibitedNameSet);
+            primIndex, subtreeRootNode, nameOrder, &nameSet, prohibitedNameSet);
     }
 
     // Remove prohibited names from the composed prim child names.
@@ -5854,6 +5732,34 @@ PcpPrimIndex::ComputePrimChildNames( TfTokenVector *nameOrder,
                 }),
             nameOrder->end());
     }
+}    
+
+void
+PcpPrimIndex::ComputePrimChildNames( TfTokenVector *nameOrder,
+                                     PcpTokenSet *prohibitedNameSet ) const
+{
+    if (!_graph) {
+        return;
+    }
+    _ComputePrimChildNamesInSubtreeImpl(
+        *this, GetRootNode(), nameOrder, prohibitedNameSet);
+}
+
+void 
+PcpPrimIndex::ComputePrimChildNamesInSubtree(
+    const PcpNodeRef &subtreeRootNode,
+    TfTokenVector *nameOrder,
+    PcpTokenSet *prohibitedNameSet) const
+{
+    if (!_graph) {
+        return;
+    }
+    if (subtreeRootNode.GetOwningGraph() != get_pointer(_graph)) {
+        TF_CODING_ERROR("Subtree root node is not a node in this prim index");
+        return;
+    }
+    _ComputePrimChildNamesInSubtreeImpl(
+        *this, subtreeRootNode, nameOrder, prohibitedNameSet);
 }
 
 void

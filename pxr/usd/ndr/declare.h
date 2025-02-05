@@ -9,6 +9,10 @@
 #define PXR_USD_NDR_DECLARE_H
 
 /// \file ndr/declare.h
+///
+/// \deprecated
+/// All Ndr objects are deprecated in favor of the corresponding Sdr objects
+/// in sdr/declare.h
 
 #include "pxr/pxr.h"
 #include "pxr/usd/ndr/api.h"
@@ -29,6 +33,10 @@ class SdfValueTypeName;
 /// \file declare.h
 ///
 /// Common typedefs that are used throughout the NDR library.
+///
+/// \deprecated
+/// All Ndr objects are deprecated in favor of the corresponding Sdr objects
+/// in sdr/declare.h
 
 typedef TfToken NdrIdentifier;
 typedef TfToken::HashFunctor NdrIdentifierHashFunctor;
@@ -63,9 +71,11 @@ typedef std::vector<std::string> NdrStringVec;
 typedef std::pair<TfToken, TfToken> NdrOption;
 typedef std::vector<NdrOption> NdrOptionVec;
 typedef std::unordered_set<std::string> NdrStringSet;
-typedef std::pair<SdfValueTypeName, TfToken> NdrSdfTypeIndicator;
 
-// Version
+/// NdrVersion
+///
+/// \deprecated
+/// Deprecated in favor of SdrVersion
 class NdrVersion {
 public:
     /// Create an invalid version.
@@ -183,6 +193,8 @@ private:
 };
 
 /// Enumeration used to select nodes by version.
+///
+/// \deprecated in favor of SdrVersionFilter.
 enum NdrVersionFilter {
     NdrVersionFilterDefaultOnly,
     NdrVersionFilterAllVersions,

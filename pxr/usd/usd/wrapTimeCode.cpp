@@ -7,21 +7,24 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/timeCode.h"
 
+#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyStaticTokens.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/stringUtils.h"
 
-#include <boost/python/class.hpp>
-#include <boost/python/implicit.hpp>
-#include <boost/python/operators.hpp>
+#include "pxr/external/boost/python/class.hpp"
+#include "pxr/external/boost/python/def.hpp"
+#include "pxr/external/boost/python/implicit.hpp"
+#include "pxr/external/boost/python/operators.hpp"
 
 #include <string>
 
 using std::string;
 
-using namespace boost::python;
-
 PXR_NAMESPACE_USING_DIRECTIVE
+
+using namespace pxr_boost::python;
 
 namespace {
 
@@ -82,6 +85,18 @@ void wrapUsdTimeCode()
 //        .def(str(self))
         .def("__str__", _Str)
         ;
+        TfPyRegisterStlSequencesFromPython<UsdTimeCode>();
+        to_python_converter<std::vector<UsdTimeCode>, 
+            TfPySequenceToPython<std::vector<UsdTimeCode>>>();
+
+        // Following is only to test that we can pass a vector of UsdTimeCode
+        // objects to and from Python.
+        def("Test_TimeCodeSequenceRoundTrip", 
+            +[](const std::vector<UsdTimeCode> &times) {
+                return times;  
+            },
+            return_value_policy<TfPySequenceToList>());
+            (args("times"));
 
     TF_PY_WRAP_PUBLIC_TOKENS("Tokens", UsdTimeCodeTokens, USD_TIME_CODE_TOKENS);
 

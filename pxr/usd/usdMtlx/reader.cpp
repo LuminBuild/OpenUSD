@@ -8,6 +8,8 @@
 #include "pxr/usd/usdMtlx/debugCodes.h"
 #include "pxr/usd/usdMtlx/reader.h"
 #include "pxr/usd/usdMtlx/utils.h"
+#include "pxr/usd/usdMtlx/materialXConfigAPI.h"
+#include "pxr/usd/usdMtlx/tokens.h"
 
 #include "pxr/usd/usdGeom/primvar.h"
 #include "pxr/usd/usdGeom/primvarsAPI.h"
@@ -433,9 +435,15 @@ _TypeSupportsColorSpace(const mx::ConstValueElementPtr& mxElem)
 
     bool colorImageNode = false;
     if (type == "filename") {
-        // verify the output is color3 or color4
-        mx::ConstNodeDefPtr parentNodeDef =
-            _GetNodeDef(mxElem->getParent()->asA<mx::Node>());
+        mx::ConstNodeDefPtr parentNodeDef;
+        if (mxElem->getParent()->isA<mx::Node>()) {
+            parentNodeDef = _GetNodeDef(mxElem->getParent()->asA<mx::Node>());
+        }
+        else if (mxElem->getParent()->isA<mx::NodeDef>()) {
+            parentNodeDef = mxElem->getParent()->asA<mx::NodeDef>();
+        }
+
+        // Verify the output is color3 or color4
         if (parentNodeDef) {
             for (const mx::OutputPtr& output : parentNodeDef->getOutputs()) {
                 const std::string &type = output->getType();
@@ -1461,6 +1469,13 @@ _Context::BeginMaterial(const mx::ConstNodePtr& mtlxMaterial)
         auto materialPath =
             _materialsPath.AppendChild(_MakeName(mtlxMaterial));
         if (auto usdMaterial = UsdShadeMaterial::Define(_stage, materialPath)) {
+            // Store the MaterialX document version on the created prim.
+            auto mtlxConfigAPI =
+                UsdMtlxMaterialXConfigAPI::Apply(usdMaterial.GetPrim());
+            auto mtlxVersionStr =
+                mtlxMaterial->getDocument()->getVersionString();
+            mtlxConfigAPI.CreateConfigMtlxVersionAttr(VtValue(mtlxVersionStr));
+
             _SetCoreUIAttributes(usdMaterial.GetPrim(), mtlxMaterial);
 
             // Record the material for later variants.
@@ -1511,15 +1526,7 @@ _Context::AddShaderNode(const mx::ConstNodePtr& mtlxShaderNode)
         return UsdShadeShader();
     }
 
-    // Choose the name of the shader.  In MaterialX this is just
-    // mtlxShaderNode->getName() and has no meaning other than to uniquely
-    // identify the shader.  In USD to support materialinherit we must
-    // ensure that shaders have the same name if one should compose over
-    // the other.  MaterialX composes over if a shader node refers to the
-    // same nodedef so in USD we use the nodedef's name.  This name isn't
-    // ideal since it's just an arbitrary unique name;  the nodedef's
-    // node name is more meaningful.
-    const auto name = _MakeName(mtlxNodeDef);
+    const auto name = _MakeName(mtlxShaderNode);
 
     // Create the shader if it doesn't exist and copy node def values.
     auto shaderImplPath = _shadersPath.AppendChild(name);
@@ -1601,7 +1608,7 @@ _Context::AddShaderNode(const mx::ConstNodePtr& mtlxShaderNode)
         }
     }
     if (auto primvars = UsdGeomPrimvarsAPI(_usdMaterial)) {
-        for (auto mtlxToken: mtlxShaderNode->getChildren()) {
+        for (auto mtlxToken : mtlxShaderNode->getChildren()) {
             if (mtlxToken->getCategory() == names.token) {
                 // Always use the string type for MaterialX tokens.
                 auto primvar =
@@ -1632,8 +1639,8 @@ _Context::AddShaderNode(const mx::ConstNodePtr& mtlxShaderNode)
     if (auto output = usdShader.GetOutput(_tokens->light)) {
         // USD doesn't support this type.
         UsdShadeConnectableAPI::ConnectToSource(
-            _usdMaterial.CreateOutput(_tokens->light, SdfValueTypeNames->Token),
-            output);
+            _usdMaterial.CreateOutput(
+                _tokens->light, SdfValueTypeNames->Token), output);
     }
 
     // Connect other semantic shader outputs.
@@ -1644,8 +1651,8 @@ _Context::AddShaderNode(const mx::ConstNodePtr& mtlxShaderNode)
             name != UsdShadeTokens->volume &&
             name != _tokens->light) {
             UsdShadeConnectableAPI::ConnectToSource(
-                _usdMaterial.CreateOutput(name, SdfValueTypeNames->Token),
-                output);
+                _usdMaterial.CreateOutput(
+                    name, SdfValueTypeNames->Token), output);
         }
     }
 

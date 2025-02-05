@@ -25,6 +25,7 @@
 #include "pxr/usd/ndr/debugCodes.h"
 #include "pxr/usd/ndr/nodeDiscoveryResult.h"
 #include "pxr/usd/sdf/assetPath.h"
+#include "pxr/usd/sdf/path.h"
 #include "pxr/usd/sdr/shaderMetadataHelpers.h"
 #include "pxr/usd/sdr/shaderNode.h"
 #include "pxr/usd/sdr/shaderProperty.h"
@@ -53,6 +54,11 @@ TF_DEFINE_PRIVATE_TOKENS(
     // Discovery and source type
     ((discoveryType, "oso"))
     ((sourceType, "OSL"))
+
+    ((usdSchemaDefPrefix, "usdSchemaDef_"))
+    ((sdrGlobalConfigPrefix, "sdrGlobalConfig_"))
+    (sdrDefinitionNameFallbackPrefix)
+    (schemaBase)
 );
 
 const NdrTokenVec& 
@@ -184,30 +190,76 @@ RmanOslParserPlugin::Parse(const NdrNodeDiscoveryResult& discoveryResult)
         return NdrParserPlugin::GetInvalidNode(discoveryResult);
     }
 
+    // The sdrDefinitionFallbackPrefix is found in the node metadata. The 
+    // fallbackPrefix is used in getNodeProperties to define the property's 
+    // ImplementationName.
+    NdrTokenMap metadata = _getNodeMetadata(sq.get(), discoveryResult.metadata);
+    std::string fallbackPrefix;
+    auto it = metadata.find(_tokens->sdrDefinitionNameFallbackPrefix);
+    if (it != metadata.end())
+    {
+        fallbackPrefix = it->second;
+    }
+
     return NdrNodeUniquePtr(
         new SdrShaderNode(
             discoveryResult.identifier,
             discoveryResult.version,
             discoveryResult.name,
             discoveryResult.family,
+            _getSdrContextFromSchemaBase(metadata),
             _tokens->sourceType,
-            _tokens->sourceType,    // OSL shaders don't declare different types
-                                    // so use the same type as the source type
             discoveryResult.resolvedUri,
             discoveryResult.resolvedUri,    // Definitive assertion that the
                                             // implementation is the same asset
                                             // as the definition
-            _getNodeProperties(sq.get(), discoveryResult),
-            _getNodeMetadata(sq.get(), discoveryResult.metadata),
+            _getNodeProperties(sq.get(), discoveryResult, fallbackPrefix),
+            metadata,
             discoveryResult.sourceCode
         )
     );
 }
 
+TfToken 
+RmanOslParserPlugin::_getSdrContextFromSchemaBase(
+    const NdrTokenMap& metadata) const
+{
+    auto metaIt = metadata.find(_tokens->schemaBase);
+    if (metaIt == metadata.end()) {
+        return _tokens->sourceType;
+    }
+    std::string schemaBase = metaIt->second;
+
+    static const std::unordered_map<TfToken, TfToken, TfHash> contextMapping({
+        { TfToken("displayfilter"), SdrNodeContext->DisplayFilter },
+        { TfToken("lightfilter"), SdrNodeContext->LightFilter },
+        { TfToken("samplefilter"), SdrNodeContext->SampleFilter },
+        { TfToken("integrator"), TfToken("integrator")},
+        // must check for "light" after "lightfilter" otherwise a light filter
+        // could be mistakenly classified as a light
+        { TfToken("light"), TfToken("light")} ,
+        { TfToken("projection"), TfToken("projection")}
+    });
+
+    // Use the context mapping to determine the sdrContext for this schema. 
+    // Test if the schema base name contains of the map keys
+    // for example, PxrDisplayFilterPluginBase contains "displayfilter"
+    std::unordered_map<TfToken, TfToken, TfHash>::const_iterator it;
+    for (it = contextMapping.begin(); it != contextMapping.end(); ++it) {
+        if (TfStringContains(TfStringToLower(schemaBase), it->first)) {
+            return it->second;
+        }
+    }
+    
+    // fallback to sourceType as default context
+    return _tokens->sourceType;
+}
+
 NdrPropertyUniquePtrVec
 RmanOslParserPlugin::_getNodeProperties(
     const RixShaderQuery* sq,
-    const NdrNodeDiscoveryResult& discoveryResult) const
+    const NdrNodeDiscoveryResult& discoveryResult, 
+    const std::string& fallbackPrefix) const
 {
     NdrPropertyUniquePtrVec properties;
     const int nParams = sq->ParameterCount();
@@ -270,6 +322,9 @@ RmanOslParserPlugin::_getNodeProperties(
         if (!definitionName.empty()){
             metadata[SdrPropertyMetadata->ImplementationName] = TfToken(propName);
             propName = definitionName;
+        } else if (!fallbackPrefix.empty()){
+            metadata[SdrPropertyMetadata->ImplementationName] = TfToken(propName);
+            propName = TfToken(SdfPath::JoinIdentifier(fallbackPrefix, propName));
         }
 
         // Extract options
@@ -342,6 +397,8 @@ RmanOslParserPlugin::_getPropertyMetadata(const RixShaderParameter* param,
                     SdrPropertyTokens->PageDelimiter.GetString());
         } else if (metaParam->Type() == RixShaderParameter::k_String) {
             metadata[entryName] = std::string(*metaParam->DefaultS());
+        } else if (metaParam->Type() == RixShaderParameter::k_Int) {
+            metadata[entryName] = std::to_string(*metaParam->DefaultI());
         }
     }
 
@@ -373,7 +430,35 @@ RmanOslParserPlugin::_getNodeMetadata(
     for (int i = 0; i < nParams; ++i) {
         const RixShaderParameter* md = metaData[i]; 
         TfToken entryName = TfToken(md->Name());
-        nodeMetadata[entryName] = std::string(md->Name()); 
+        std::string paramValue;
+
+        // XXX: Need to handle vector values, when we have a use case for OSL
+        // shaders using such metadata (ie usdSchemaDef's apiSchemaAutoApplyTo)
+        if(md->Type() == RixShaderParameter::k_String)
+        {
+            paramValue = std::string(*md->DefaultS()); 
+        }
+
+        // Check for node metadata with the usdSchemaDef_ prefix and store the
+        // metadata with the prefix removed.
+        if (strncmp(_tokens->usdSchemaDefPrefix.GetText(), entryName.GetText(), 
+            _tokens->usdSchemaDefPrefix.size()) == 0)
+        {
+            const std::string entrySubStr = (entryName.GetString()).substr(
+                (_tokens->usdSchemaDefPrefix).size());
+            nodeMetadata[TfToken(entrySubStr)] = paramValue;
+        }
+        else if (strncmp(_tokens->sdrGlobalConfigPrefix.GetText(), 
+            entryName.GetText(), _tokens->sdrGlobalConfigPrefix.size()) == 0)
+        {
+            const std::string entrySubStr = (entryName.GetString()).substr(
+                (_tokens->sdrGlobalConfigPrefix).size());
+            nodeMetadata[TfToken(entrySubStr)] = paramValue;
+        }
+        else
+        {
+            nodeMetadata[entryName] = paramValue; 
+        }
     }
 
     return nodeMetadata;
@@ -458,7 +543,9 @@ RmanOslParserPlugin::_getDefaultValue(
         }
 
         VtIntArray array;
-        array.reserve( (size_t) param->ArrayLength() );
+        if (param->ArrayLength() > 0) {
+            array.reserve( (size_t) param->ArrayLength() );
+        }
         for (int i = 0; i <  param->ArrayLength(); ++i)
         {
             array.push_back( dflts[i] );
@@ -479,7 +566,9 @@ RmanOslParserPlugin::_getDefaultValue(
 
         // Handle array
         VtStringArray array;
-        array.reserve( (size_t) param->ArrayLength() );
+        if (param->ArrayLength() > 0) {
+            array.reserve( (size_t) param->ArrayLength() );
+        }
         for (int i = 0; i <  param->ArrayLength(); ++i)
         {
             array.push_back( std::string( dflts[i] ) );
@@ -497,7 +586,9 @@ RmanOslParserPlugin::_getDefaultValue(
         }
 
         VtFloatArray array;
-        array.reserve( (size_t) param->ArrayLength() );
+        if (param->ArrayLength() > 0) {
+            array.reserve( (size_t) param->ArrayLength() );
+        }
         for (int i = 0; i <  param->ArrayLength(); ++i)
         {
             array.push_back( dflts[i] ); 

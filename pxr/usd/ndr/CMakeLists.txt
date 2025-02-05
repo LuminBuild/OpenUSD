@@ -9,10 +9,6 @@ pxr_library(ndr
         work
         ar
         sdf
-        ${Boost_PYTHON_LIBRARY}
-
-    INCLUDE_DIRS
-        ${Boost_INCLUDE_DIRS}
 
     PUBLIC_CLASSES
         debugCodes
@@ -24,13 +20,11 @@ pxr_library(ndr
         parserPlugin
         property
         registry
+        sdfTypeIndicator
 
     PUBLIC_HEADERS
         api.h
         nodeDiscoveryResult.h
-
-    PYTHON_CPPFILES
-        moduleDeps.cpp
 
     PYMODULE_CPPFILES
         module.cpp
@@ -42,6 +36,7 @@ pxr_library(ndr
         wrapNodeDiscoveryResult.cpp
         wrapProperty.cpp
         wrapRegistry.cpp
+        wrapSdfTypeIndicator.cpp
 
     PYMODULE_FILES
         __init__.py

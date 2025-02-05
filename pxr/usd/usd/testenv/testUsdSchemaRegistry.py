@@ -18,6 +18,16 @@ class TestUsdSchemaRegistry(unittest.TestCase):
         assert testPlugins[0].name == "testUsdSchemaRegistry", \
             "Failed to load expected test plugin"
     
+        # This checks an invalid case for test_SchemaIdentifier that throws a
+        # coding error on schema registry construction
+        try:
+            Usd.SchemaRegistry()
+            assert False, "Coding error expected on schema registry initialization."
+        except Tf.ErrorException as e:
+            assert 'Registration failed for schema type ' \
+                   'TestUsdSchemaRegistryNoIdentifierAndNoAlias.' in str(e)
+            assert len(str(e).strip().split('\n')) == 1
+    
     def test_PrimMetadata(self):
         primDef = Usd.SchemaRegistry().FindConcretePrimDefinition(
             "MetadataTest")
@@ -475,6 +485,32 @@ class TestUsdSchemaRegistry(unittest.TestCase):
 
         self.assertEqual(Usd.SchemaRegistry.GetSchemaKind("Bogus"),
                          Usd.SchemaKind.Invalid)
+        
+    def test_SchemaIdentifier(self):
+        # Schema identifier matches alias
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryIdentifierMatchesAlias")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), "IdentifierMatchesAlias")
+
+        # Schema identifier does not match alias
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryIdentifierDoesNotMatchAlias")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), "NotMatching")
+
+        # No schema identifier, but alias is present
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryNoIdentifier")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), "NoIdentifier")
+
+        # No alias, but schema identifier is present
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryNoAlias")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), "NoAlias")
+
+        # Invalid case: neither are present
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryNoIdentifierAndNoAlias")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), "")
+
+        # Schema identifier matches class name
+        matches = Tf.Type.FindByName("TestUsdSchemaRegistryIdentifierMatchesClassName")
+        self.assertEqual(Usd.SchemaRegistry.GetSchemaTypeName(matches), 
+                         "TestUsdSchemaRegistryIdentifierMatchesClassName")
 
     def test_IsConcrete(self):
         modelAPI = Tf.Type.FindByName("UsdModelAPI")

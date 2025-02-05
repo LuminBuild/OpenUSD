@@ -11,11 +11,11 @@
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/usd/sdr/shaderProperty.h"
 
-#include <boost/python.hpp>
-
-using namespace boost::python;
+#include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+using namespace pxr_boost::python;
 
 namespace {
 
@@ -57,7 +57,7 @@ void wrapShaderProperty()
                         SdrShaderPropertyConstPtrToPythonConverter>();
 
     class_<This, ThisPtr, bases<NdrProperty>,
-           boost::noncopyable>("ShaderProperty", no_init)
+           noncopyable>("ShaderProperty", no_init)
         .def("GetDefaultValueAsSdfType", &This::GetDefaultValueAsSdfType,
                 copyRefPolicy)
         .def("GetLabel", &This::GetLabel, copyRefPolicy)
@@ -77,6 +77,8 @@ void wrapShaderProperty()
         .def("IsVStruct", &This::IsVStruct)
         .def("GetValidConnectionTypes", &This::GetValidConnectionTypes,
             copyRefPolicy)
+        .def("CanConnectTo", (bool (SdrShaderProperty::*)(
+            const SdrShaderProperty&) const) &This::CanConnectTo)
         .def("IsAssetIdentifier", &This::IsAssetIdentifier)
         .def("IsDefaultInput", &This::IsDefaultInput)
         ;

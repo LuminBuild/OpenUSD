@@ -128,52 +128,55 @@ HdMergingSceneIndex::RemoveInputScene(const HdSceneIndexBaseRefPtr &sceneIndex)
 {
     TRACE_FUNCTION();
 
-    for (_InputEntries::iterator it = _inputs.begin(); it != _inputs.end();
-            ++it) {
-        if (sceneIndex == it->sceneIndex) {
-            std::vector<SdfPath> removalTestQueue = { it->sceneRoot };
+    auto it = std::find_if(
+        _inputs.begin(), _inputs.end(),
+        [&sceneIndex](const _InputEntry &entry) {
+            return sceneIndex == entry.sceneIndex; });
 
-            // prims unique to this input get removed
-            HdSceneIndexObserver::RemovedPrimEntries removedEntries;
+    if (it == _inputs.end()) {
+        return;
+    }
 
-            // prims which this input contributed to are resynced via
-            // PrimsAdded.
-            HdSceneIndexObserver::AddedPrimEntries addedEntries;
+    std::vector<SdfPath> removalTestQueue = { it->sceneRoot };
 
-            sceneIndex->RemoveObserver(HdSceneIndexObserverPtr(&_observer));
-            _inputs.erase(it);
+    sceneIndex->RemoveObserver(HdSceneIndexObserverPtr(&_observer));
+    _inputs.erase(it);
 
-            if (!_IsObserved()) {
-                return;
+    if (!_IsObserved()) {
+        return;
+    }
+
+    // prims unique to this input get removed
+    HdSceneIndexObserver::RemovedPrimEntries removedEntries;
+
+    // prims which this input contributed to are resynced via
+    // PrimsAdded.
+    HdSceneIndexObserver::AddedPrimEntries addedEntries;
+
+    // signal removal for anything not present once this scene is
+    // removed
+    while (!removalTestQueue.empty()) {
+        const SdfPath path = removalTestQueue.back();
+        removalTestQueue.pop_back();
+
+        const HdSceneIndexPrim prim = GetPrim(path);
+        if (!prim.dataSource
+                 && GetChildPrimPaths(path).empty()) {
+            removedEntries.emplace_back(path);
+        } else {
+            addedEntries.emplace_back(path, prim.primType);
+            for (const SdfPath &childPath :
+                     sceneIndex->GetChildPrimPaths(path)) {
+                removalTestQueue.push_back(childPath);
             }
-
-            // signal removal for anything not present once this scene is
-            // removed
-            while (!removalTestQueue.empty()) {
-                const SdfPath path = removalTestQueue.back();
-                removalTestQueue.pop_back();
-
-                HdSceneIndexPrim prim = GetPrim(path);
-                if (!prim.dataSource
-                        && GetChildPrimPaths(path).empty()) {
-                    removedEntries.emplace_back(path);
-                } else {
-                    addedEntries.emplace_back(path, prim.primType);
-                    for (const SdfPath &childPath :
-                            sceneIndex->GetChildPrimPaths(path)) {
-                        removalTestQueue.push_back(childPath);
-                    }
-                }
-            }
-
-            if (!removedEntries.empty()) {
-                _SendPrimsRemoved(removedEntries);
-            }
-            if (!addedEntries.empty()) {
-                _SendPrimsAdded(addedEntries);
-            }
-            return;
         }
+    }
+
+    if (!removedEntries.empty()) {
+        _SendPrimsRemoved(removedEntries);
+    }
+    if (!addedEntries.empty()) {
+        _SendPrimsAdded(addedEntries);
     }
 }
 
@@ -363,43 +366,33 @@ HdMergingSceneIndex::_PrimsRemoved(
         return;
     }
 
-    HdSceneIndexObserver::RemovedPrimEntries filteredEntries;
-    filteredEntries.reserve(entries.size());
-
     // Note: if a prim is removed from an input scene, but exists in another
     // input scene, we trigger that as a resync (signaled by PrimsAdded).
     HdSceneIndexObserver::AddedPrimEntries addedEntries;
 
     for (const HdSceneIndexObserver::RemovedPrimEntry &entry : entries) {
-        bool primFullyRemoved = true;
+        const SdfPathVector childPaths = GetChildPrimPaths(entry.primPath);
+        const HdSceneIndexPrim prim = GetPrim(entry.primPath);
 
-        for (const _InputEntry &inputEntry : _inputs) {
-            if (get_pointer(inputEntry.sceneIndex) == &sender) {
-                continue;
-            }
-
-            // another input having either a data source or children of the
-            // specified prim considers this not a full removal
-            if (inputEntry.sceneIndex->GetPrim(entry.primPath).dataSource
-                    || !inputEntry.sceneIndex->GetChildPrimPaths(
-                            entry.primPath).empty()) {
-                primFullyRemoved = false;
-                break;
-            }
+        if (!childPaths.empty() || prim.dataSource || !prim.primType.IsEmpty()) {
+            addedEntries.emplace_back(entry.primPath, prim.primType);
         }
 
-        if (primFullyRemoved) {
-            filteredEntries.push_back(entry);
-        } else {
-            for (const SdfPath& descendantPath : HdSceneIndexPrimView(
-                     HdMergingSceneIndexRefPtr(this), entry.primPath)) {
+        if (childPaths.empty()) {
+            continue;
+        }
+
+        HdMergingSceneIndexRefPtr const self(this);
+        for (const SdfPath &childPath : childPaths) {
+            for (const SdfPath& descendantPath
+                     : HdSceneIndexPrimView(self, childPath)) {
                 addedEntries.emplace_back(
                     descendantPath, GetPrim(descendantPath).primType);
             }
         }
     }
 
-    _SendPrimsRemoved(filteredEntries);
+    _SendPrimsRemoved(entries);
     _SendPrimsAdded(addedEntries);
 }
 

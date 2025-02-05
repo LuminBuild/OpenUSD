@@ -8,6 +8,9 @@
 
 #include "pxr/base/gf/rotation.h"
 #include "pxr/base/gf/vec3f.h"
+#if PXR_VERSION >= 2311
+#include "pxr/base/tf/hash.h"
+#endif
 #include "pxr/base/tf/staticTokens.h"
 #include "pxr/imaging/hd/dataSource.h"
 #include "pxr/imaging/hd/dataSourceMaterialNetworkInterface.h"
@@ -24,7 +27,9 @@
 #include "pxr/imaging/hd/xformSchema.h"
 #include "pxr/usd/sdf/assetPath.h"
 
+#if PXR_VERSION <= 2308
 #include <boost/functional/hash.hpp>
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -47,6 +52,7 @@ TF_DEFINE_PRIVATE_TOKENS(
     (exposure)
     (intensity)
     ((intensityMult,           "ri:light:intensityMult"))
+    ((exposureAdjust,          "ri:light:exposureAdjust"))
     ((portalName,              "ri:light:portalName"))
     ((portalToDome,            "ri:light:portalToDome"))
     ((tint,                    "ri:light:tint"))
@@ -163,10 +169,17 @@ _GetPortalName(
     const GfMatrix4d& domeXform,
     const GfMatrix4d& portalXform)
 {
+#if PXR_VERSION >= 2311
+    size_t hashValue = TfHash::Combine(
+        domeColorMap, 
+        domeXform.ExtractRotation(),
+        portalXform.ExtractRotation());
+#else
     size_t hashValue = 0;
     boost::hash_combine(hashValue, domeColorMap);
     boost::hash_combine(hashValue, domeXform.ExtractRotation());
     boost::hash_combine(hashValue, portalXform.ExtractRotation());
+#endif
 
     return std::to_string(hashValue);
 }
@@ -301,9 +314,11 @@ _BuildPortalLightDataSource(
 
     const VtValue portalTintVal    = getPortalMatVal(_tokens->tint);
     const VtValue portalIntMultVal = getPortalMatVal(_tokens->intensityMult);
+    const VtValue portalExpAdjtVal = getPortalMatVal(_tokens->exposureAdjust);
 
     const auto portalTint    = portalTintVal.GetWithDefault(GfVec3f(1.0f));
     const auto portalIntMult = portalIntMultVal.GetWithDefault(1.0f);
+    const auto portalExpAdj  = portalExpAdjtVal.GetWithDefault(0.0f);
 
     GfMatrix4d portalXform;
     if (const auto origPortalXform = portalXformSchema.GetMatrix()) {
@@ -334,7 +349,7 @@ _BuildPortalLightDataSource(
 
     const auto computedPortalColor = GfCompMult(portalTint, domeColor);
     const auto computedPortalIntensity = portalIntMult * domeIntensity *
-                                         powf(2.0f, domeExposure);
+                                         powf(2.0f, domeExposure+portalExpAdj);
     const auto computedPortalToDome = portalXform * domeXform.GetInverse();
     const auto computedPortalName = _GetPortalName(domeColorMap, domeXform,
                                                    portalXform);

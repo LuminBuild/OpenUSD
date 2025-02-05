@@ -10,6 +10,7 @@
 #include "pxr/imaging/hgiVulkan/conversions.h"
 #include "pxr/imaging/hgiVulkan/device.h"
 #include "pxr/imaging/hgiVulkan/sampler.h"
+#include "pxr/imaging/hgiVulkan/diagnostic.h"
 
 #include <float.h>
 
@@ -52,15 +53,18 @@ HgiVulkanSampler::HgiVulkanSampler(
         HgiVulkanCapabilities const& caps = device->GetDeviceCapabilities();
         sampler.anisotropyEnable = caps.vkDeviceFeatures.samplerAnisotropy;
         sampler.maxAnisotropy = sampler.anisotropyEnable ?
-            caps.vkDeviceProperties.limits.maxSamplerAnisotropy : 1.0f; 
+            std::min<float>({
+                caps.vkDeviceProperties.limits.maxSamplerAnisotropy,
+                static_cast<float>(desc.maxAnisotropy),
+                static_cast<float>(TfGetEnvSetting(HGI_MAX_ANISOTROPY))}) : 1.0f;
     }
 
-    TF_VERIFY(
+    HGIVULKAN_VERIFY_VK_RESULT(
         vkCreateSampler(
             device->GetVulkanDevice(),
             &sampler,
             HgiVulkanAllocator(),
-            &_vkSampler) == VK_SUCCESS
+            &_vkSampler)
     );
 }
 

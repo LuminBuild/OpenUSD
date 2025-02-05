@@ -301,15 +301,8 @@ PcpCache::RequestLayerMuting(const std::vector<std::string>& layersToMute,
 
     Pcp_CacheChangesHelper cacheChanges(changes);
 
-    // Register changes for all computed layer stacks that are
-    // affected by the newly muted/unmuted layers.
-    for (const auto& layerToMute : finalLayersToMute) {
-        cacheChanges->DidMuteLayer(this, layerToMute);
-    }
-
-    for (const auto& layerToUnmute : finalLayersToUnmute) {
-        cacheChanges->DidUnmuteLayer(this, layerToUnmute);
-    }
+    cacheChanges->DidMuteAndUnmuteLayers(
+        this, finalLayersToMute, finalLayersToUnmute);
 
     // The above won't handle cases where we've unmuted the root layer
     // of a reference or payload layer stack, since prim indexing will skip
@@ -565,8 +558,15 @@ _ProcessDependentNode(
         // a relocate node's map function is always
         // identity, we must do our own prefix replacement
         // to step out of the relocate, then continue
-        // with regular path translation.
-        const PcpNodeRef parent = node.GetParentNode(); 
+        // with regular path translation. We must step out of all 
+        // consecutive relocate nodes since they all only hold the 
+        // identity mapping. Once we hit a non-relocates node, any
+        // relocates above that will be accounted for in the map to 
+        // root function
+        PcpNodeRef parent = node.GetParentNode();
+        while (parent.GetArcType() == PcpArcTypeRelocate) {
+            parent = parent.GetParentNode();
+        }
         depIndexPath = PcpTranslatePathFromNodeToRoot(
             parent,
             localSitePath.ReplacePrefix( node.GetPath(),
@@ -1031,13 +1031,14 @@ PcpCache::Apply(const PcpCacheChanges& changes, PcpLifeboat* lifeboat)
         }
 
         // Blow property stacks and update spec dependencies on prims.
-        auto updateSpecStacks = [this, &lifeboat](const SdfPath& path) {
+        auto updateSpecStacks = [this, &lifeboat, &changes](const SdfPath& path) {
             if (path.IsAbsoluteRootOrPrimPath()) {
                 // We've possibly changed the prim spec stack.  Note that
                 // we may have blown the prim index so check that it exists.
                 if (PcpPrimIndex* primIndex = _GetPrimIndex(path)) {
                     Pcp_RescanForSpecs(primIndex, IsUsd(),
-                                       /* updateHasSpecs */ true);
+                                       /* updateHasSpecs */ true,
+                                       &changes);
 
                     // If there are no specs left then we can discard the
                     // prim index.
@@ -1057,7 +1058,7 @@ PcpCache::Apply(const PcpCacheChanges& changes, PcpLifeboat* lifeboat)
                 _RemovePropertyCache(path, lifeboat);
             }
             else if (path.IsTargetPath()) {
-                // We have potentially aded or removed a relationship target
+                // We have potentially added or removed a relationship target
                 // spec.  This invalidates the property stack for any
                 // relational attributes for this target.
                 _RemovePropertyCaches(path, lifeboat);
@@ -1070,6 +1071,19 @@ PcpCache::Apply(const PcpCacheChanges& changes, PcpLifeboat* lifeboat)
 
         TF_FOR_ALL(i, changes._didChangeSpecsInternal) {
             updateSpecStacks(*i);
+        }
+
+        // Ensure that all relevant paths that have been affected by
+        // sublayer operations have their prim stacks updated
+        TF_FOR_ALL(i, changes._didChangePrimSpecsAndChildrenInternal) {
+            auto range = _primIndexCache.FindSubtreeRange(*i);
+            for (auto i = range.first; i != range.second; ++i) {
+                if (PcpPrimIndex* primIndex = _GetPrimIndex(i->first)) {
+                    Pcp_RescanForSpecs(primIndex, IsUsd(),
+                                       /* updateHasSpecs */ true,
+                                       &changes);
+                }
+            }
         }
 
         // Fix the keys for any prim or property under any of the renamed
