@@ -333,9 +333,9 @@ Alembic library specified in ALEMBIC_DIR.
 
 See [3rd Party Library and Application Versions](VERSIONS.md) for version information.
 
-Support for Alembic files using the HDF5 backend is enabled by default but can be
-disabled by specifying the cmake flag `PXR_ENABLE_HDF5_SUPPORT=FALSE`. HDF5
-support requires the following dependencies:
+Support for Alembic files using the HDF5 backend can be enabled by specifying
+the cmake flag `PXR_ENABLE_HDF5_SUPPORT=TRUE`. HDF5 support requires the
+following dependencies:
 
 | Dependency Name    | Description     |
 | ------------------ |---------------- |
@@ -392,6 +392,26 @@ ${CMAKE_BINARY_DIR}/Testing/Failed-Diffs/<ctest_run_timestamp>/${TEST_NAME}/${fi
 ```
 
 ## Other Build Options
+
+##### Custom Task Management System
+
+USD uses task-based parallelism to improve scalability and performance. This foundation for this is located in the
+"work" library in pxr/base/work. By default, this library is implemented using the Intel TBB or oneAPI oneTBB
+library.
+
+Users may substitute their own task management system by providing a custom implementation for the work library.
+To do so, set the cmake variable `PXR_WORK_IMPL` to the name of the CMake package providing the custom implementation.
+USD must be able to locate a package with that name via a call to `find_package(${PXR_WORK_IMPL}` CONFIG)`, which
+may require specifying additional CMake variables. The package must provide a library target named
+`${PXR_WORK_IMPL}::${PXR_WORK_IMPL}` that specifies interface definitions (include directories, shared libraries,
+etc.) needed to use that library. The library must implement the required functions and classes and have a header
+named `impl.h` that supplies their declarations (either directly or in header files included in `impl.h`). This
+header must be able to be included via `#include <${PXR_WORK_IMPL}/impl.h>`.
+
+For example, a custom work implementation named `workExample` must provide a `workExampleConfig.cmake` file
+specifying a library target named `workExample::workExample`. This library must at minimum provide an `impl.h`
+header with the required implementations and set up interface include directories so that the header can
+be located via an include statement like `#include <workExample/impl.h>`.
 
 ##### Plugin Metadata Location
 
@@ -468,25 +488,6 @@ pxr/pxr.h, which facilitates using namespaces:
 | PXR_NAMESPACE_CLOSE_SCOPE      | Closes the namespace.                                                |
 | PXR_NS                         | Explicit qualification on items, e.g. `PXR_NS::TfToken foo = ...`|
 | PXR_NAMESPACE_USING_DIRECTIVE  | Enacts a using-directive, e.g. `using namespace PXR_NS;`         |
-
-##### ASCII Parser Editing/Validation
-
-There is an ASCII parser for the USD file format, which can be found in
-[sdf](pxr/usd/sdf). Most users will not have a need to edit the parser, but
-for the adventurous ones, there are a couple additional requirements.
-
-If you choose to edit the ASCII parsers, make sure
-`PXR_VALIDATE_GENERATED_CODE` is set to `TRUE`.  This flag enables tests
-that check the generated code in [sdf](pxr/usd/lib/sdf) and
-[gf](pxr/base/lib/gf).
-
-| Dependency Name    | Description                                             |
-| ------------------ | ------------------------------------------------------- |
-| FLEX_EXECUTABLE    | Path to [flex](http://flex.sourceforge.net/) executable |
-| BISON_EXECUTABLE   | Path to [bison](https://www.gnu.org/software/bison/) executable  |
-
-See [3rd Party Library and Application Versions](VERSIONS.md) for version information.
-
 
 ##### USD Schema Generation
 

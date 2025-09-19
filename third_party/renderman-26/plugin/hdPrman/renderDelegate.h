@@ -4,8 +4,8 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef EXT_RMANPKG_25_0_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H
-#define EXT_RMANPKG_25_0_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H
+#ifndef EXT_RMANPKG_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H
+#define EXT_RMANPKG_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H
 
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/renderDelegate.h"
@@ -15,8 +15,6 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 #define HDPRMAN_RENDER_SETTINGS_TOKENS                                 \
-    ((rileyVariant,                   "ri:variant"))                   \
-    ((xpuDevices,                     "ri:xpudevices"))                \
     ((integrator,                     "integrator"))                   \
     ((integratorName,                 "ri:integrator:name"))           \
     ((interactiveIntegrator,          "interactiveIntegrator"))        \
@@ -33,9 +31,6 @@ PXR_NAMESPACE_OPEN_SCOPE
     ((shutterOpen,                    "shutter:open"))                 \
     ((shutterClose,                   "shutter:close"))                \
     ((experimentalRenderSpec,         "experimental:renderSpec"))      \
-    ((renderVariant,                  "renderVariant"))                \
-    ((xpuCpuConfig,                   "xpuCpuConfig"))                 \
-    ((xpuGpuConfig,                   "xpuGpuConfig"))                 \
     ((delegateRenderProducts,         "delegateRenderProducts"))       \
     ((projection,                     "projection"))                   \
     ((projectionName,                 "ri:projection:name"))           \
@@ -120,7 +115,10 @@ class HdPrmanRenderDelegate : public HdRenderDelegate
 {
 public:
     HDPRMAN_API
-    HdPrmanRenderDelegate(HdRenderSettingsMap const& settingsMap);
+    HdPrmanRenderDelegate(HdRenderSettingsMap const& settingsMap,
+        TfToken const& rileyVariant,
+        int xpuCpuConfig,
+        std::vector<int> xpuGpuConfig);
     HDPRMAN_API
     ~HdPrmanRenderDelegate() override;
 
@@ -289,4 +287,4 @@ protected:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // EXT_RMANPKG_25_0_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H
+#endif // EXT_RMANPKG_PLUGIN_RENDERMAN_PLUGIN_HD_PRMAN_RENDER_DELEGATE_H

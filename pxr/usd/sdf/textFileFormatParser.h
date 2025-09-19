@@ -17,7 +17,6 @@
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/usd/sdf/data.h"
 #include "pxr/usd/sdf/debugCodes.h"
 #include "pxr/usd/sdf/listOp.h"
 #include "pxr/usd/sdf/path.h"
@@ -79,7 +78,9 @@ struct Utf8NoEolf : PEGTL_NS::minus<Utf8, Eol> {};
 
 // keyword
 struct KeywordAdd : PXR_PEGTL_KEYWORD("add") {};
+struct KeywordAnimationBlock : PXR_PEGTL_KEYWORD("AnimationBlock") {};
 struct KeywordAppend : PXR_PEGTL_KEYWORD("append") {};
+struct KeywordAutoEase : PXR_PEGTL_KEYWORD("autoEase") {};
 struct KeywordBezier: PXR_PEGTL_KEYWORD("bezier") {};
 struct KeywordClass : PXR_PEGTL_KEYWORD("class") {};
 struct KeywordConfig : PXR_PEGTL_KEYWORD("config") {};
@@ -136,6 +137,7 @@ struct KeywordVarying : PXR_PEGTL_KEYWORD("varying") {};
 
 struct Keywords : PEGTL_NS::sor<
 KeywordAdd,
+KeywordAnimationBlock,
 KeywordAppend,
 KeywordBezier,
 KeywordClass,
@@ -693,10 +695,10 @@ struct SplineCurveTypeItem : PEGTL_NS::sor<
     KeywordBezier> {};
 
 struct SlopeValue : Number {};
-// SplineExtrapolationType = NONE / HELD / LINEAR / 
-// SLOPED '(' (TokenSeparator)? SloveValue (TokenSeparator)? ')' / 
-// LOOP TokenSeparator REPEAT / LOOP TokenSeparator RESET / 
-// LOOP TokenSeparator OSCILLATE
+// SplineExtrapolationType = NONE / HELD / LINEAR /
+// SLOPED (InlinePadding)* '(' (InlinePadding)* SlopeValue (InlinePadding)* ')' /
+// LOOP TokenSeparator REPEAT / LOOP TokenSeparator RESET / LOOP
+// TokenSeparator OSCILLATE
 struct SplineExtrapolationType : PEGTL_NS::sor<
     KeywordNone_LC,
     KeywordHeld,
@@ -710,14 +712,14 @@ struct SplineExtrapolationType : PEGTL_NS::sor<
     PEGTL_NS::seq<KeywordLoop, TokenSeparator, KeywordOscillate>> {};
 
 // SplinePreExtrapItem = pre (TokenSeparator)? Colon (TokenSeparator)? 
-// SplineExtrapolation
+// SplineExtrapolationType
 struct SplinePreExtrapItem : PEGTL_NS::seq<
     KeywordPre,
     PEGTL_NS::pad<Colon, InlinePadding>,
     SplineExtrapolationType> {};
 
 // SplinePostExtrapItem = post (TokenSeparator)? Colon (TokenSeparator)? 
-// SplineExtrapolation
+// SplineExtrapolationType
 struct SplinePostExtrapItem : PEGTL_NS::seq<
     KeywordPost,
     PEGTL_NS::pad<Colon, InlinePadding>,
@@ -751,33 +753,54 @@ struct SplineLoopItem : PEGTL_NS::seq<
     PEGTL_NS::pad<SplineLoopItemValueOffset, InlinePadding>,
     RightParen> {};
 
-struct SplineTangentValue : Number {};
 struct SplineTangentWidth : Number {};
-// Helper rule to parse SplineTangentWithWidth
-// SplineTangentWithWidthValue = Number (TokenSeparator)? ListSeparator 
-// (TokenSeparator)? Number
-struct SplineTangentWithWidthValue : PEGTL_NS::seq<
+struct SplineTangentSlope : Number {};
+struct SplineTangentAlgorithm : PEGTL_NS::sor<
+    KeywordCustom,
+    KeywordAutoEase> {};
+// Helper rule to parse SplineTangent
+// SplineTangentWidthSlopeAlgorithmItem = SplineTangentWidth (InlinePadding)?
+//                                        ListSeparator (InlinePadding)?
+//                                        SplineTangentSlope (InlinePadding)?
+//                                        ListSeparator (InlinePadding)?
+//                                        AlgorithmName
+struct SplineTangentWidthSlopeAlgorithmItem : PEGTL_NS::seq<
     SplineTangentWidth,
     PEGTL_NS::pad<ListSeparator, InlinePadding>,
-    SplineTangentValue> {};
-// SplineTangentWithoutWidthValue = Number (TokenSeparator)? 
-// (not at SplineKnotPreValueSeparator)
-struct SplineTangentWithoutWidthValue : PEGTL_NS::seq<
-    PEGTL_NS::pad<SplineTangentValue, InlinePadding>,
-    PEGTL_NS::not_at<ListSeparator>> {};
+    SplineTangentSlope,
+    PEGTL_NS::pad<ListSeparator, InlinePadding>,
+    SplineTangentAlgorithm> {};
+// SplineTangentWidthSlopeItem = SplineTangentWidth (InlinePadding)?
+//                               ListSeparator (InlinePadding)?
+//                               SplineTangentSlope
+struct SplineTangentWidthSlopeItem : PEGTL_NS::seq<
+    SplineTangentWidth,
+    PEGTL_NS::pad<ListSeparator, InlinePadding>,
+    SplineTangentSlope> {};
+// SplineTangentSlopeAlgorithmItem = SplineTangentSlope (InlinePadding)?
+//                                   ListSeparator (InlinePadding)?
+//                                   AlgorithmName
+struct SplineTangentSlopeAlgorithmItem : PEGTL_NS::seq<
+    SplineTangentSlope,
+    PEGTL_NS::pad<ListSeparator, InlinePadding>,
+    SplineTangentAlgorithm> {};
+// SplineTangentSlopeItem = SplineTangentSlope
+struct SplineTangentSlopeItem : SplineTangentSlope {};
 
-// SplineTangent = ( (TokenSeparator)?
-//                   SplineTangentWithoutWidthValue
-//                   (TokenSeparator)? ) /
-//                 ( (TokenSeparator)? 
-//                   SplineTangentWithWidthValue
-//                   (TokenSeparator)? )
-struct SplineTangent : PEGTL_NS::sor<
+// SplineTangent = ( (InlinePadding)?
+//                   (SplineTangentWidthSlopeAlgorithmItem /
+//                    SplineTangentWidthSlopeItem /
+//                    SplineTangentSlopeAlgorithmItem /
+//                    SplineTangentSlopeItem)
+//                   (InlinePadding)? )
+struct SplineTangent : PEGTL_NS::seq<
     PEGTL_NS::seq<PEGTL_NS::pad<LeftParen, InlinePadding>,
-                  PEGTL_NS::pad<SplineTangentWithoutWidthValue, InlinePadding>,
-                  RightParen>,
-    PEGTL_NS::seq<PEGTL_NS::pad<LeftParen, InlinePadding>,
-                  PEGTL_NS::pad<SplineTangentWithWidthValue, InlinePadding>,
+                  PEGTL_NS::pad<
+                      PEGTL_NS::sor<SplineTangentWidthSlopeAlgorithmItem,
+                                    SplineTangentWidthSlopeItem,
+                                    SplineTangentSlopeAlgorithmItem,
+                                    SplineTangentSlopeItem>,
+                      InlinePadding>,
                   RightParen>> {};
 
 // SplineInterpMode = NONE / HELD / LINEAR / CURVE
@@ -789,7 +812,7 @@ struct SplineInterpMode : PEGTL_NS::sor<
 
 // SplinePreTan = pre TokenSeparator SplineTangent
 struct SplinePreTan : PEGTL_NS::seq<
-    KeywordPre, 
+    KeywordPre,
     TokenSeparator,
     SplineTangent> {};
 
@@ -797,8 +820,9 @@ struct SplinePreTan : PEGTL_NS::seq<
 // (SplineTangent)?
 struct SplinePostShaping : PEGTL_NS::seq<
     KeywordPost,
-    PEGTL_NS::pad<SplineInterpMode, InlinePadding>,
-    PEGTL_NS::opt<SplineTangent>> {};
+    TokenSeparator,
+    SplineInterpMode,
+    PEGTL_NS::opt<InlinePadding, SplineTangent>> {};
 
 // SplineKnotParam = SplinePreTan / SplinePostShaping / DictionaryValue
 struct SplineKnotParam : PEGTL_NS::sor<
@@ -815,7 +839,7 @@ struct SplineKnotParamList : PEGTL_NS::opt<
         PEGTL_NS::seq<
             PEGTL_NS::pad<
                 StatementSequenceOf<SplineKnotParam>, InlinePadding>,
-            PEGTL_NS::not_at<StatementSeparator>>>> {};
+            PEGTL_NS::not_at<SplineKnotParamSeparator>>>> {};
 
 struct SplineKnotValue : Number {};
 struct SplineKnotPreValue : Number {};
@@ -826,8 +850,8 @@ struct SplineKnotValueWithoutPreValue : PEGTL_NS::seq<
     SplineKnotValue,
     PEGTL_NS::pad<PEGTL_NS::not_at<SplineKnotPreValueSeparator>, 
         InlinePadding>> {};
-// SplineKnotValueWithPreValue = SplineKnotPreValue (TokenSeparator)? 
-// SplineKnotPreValueSeparator SplineKnotValue
+// SplineKnotValueWithPreValue = SplineKnotPreValue InlinePadding 
+// SplineKnotPreValueSeparator InlinePadding SplineKnotValue
 struct SplineKnotValueWithPreValue : PEGTL_NS::seq<
     SplineKnotPreValue,
     PEGTL_NS::pad<SplineKnotPreValueSeparator, InlinePadding>,
@@ -857,7 +881,7 @@ struct SplineItem : PEGTL_NS::sor<
     SplineLoopItem,
     SplineKnotItem> {};
 
-// SplineValue = { (TokenSeparator)? (SplineItem (TokenSeparator)?)* }
+// SplineValue = { (MultilinePadding)? (SplineItem (MultilinePadding)?)* }
 struct SplineValue : PEGTL_NS::if_must<
     LeftBrace,
     PEGTL_NS::pad<ListOf<SplineItem>, MultilinePadding>,
@@ -905,12 +929,13 @@ struct AttributeDeclaration : PEGTL_NS::seq<
     TokenSeparator,
     NamespacedName> {};
 
-// AttributeValue = None / TypedValue
+// AttributeValue = None / AnimationBlock / TypedValue
 // AttributeAssignment = Assignment AttributeValue
 struct AttributeAssignment : PEGTL_NS::seq<
     Assignment,
     PEGTL_NS::sor<
         KeywordNone,
+        KeywordAnimationBlock,
         TypedValue>> {};
 struct AttributeAssignmentOptional : PEGTL_NS::opt<
     AttributeAssignment> {};

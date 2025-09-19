@@ -70,6 +70,7 @@ public:
     virtual Ts_KnotData* CloneKnotAtIndex(size_t index) const = 0;
     virtual Ts_KnotData* CloneKnotAtTime(TsTime time) const = 0;
     virtual Ts_KnotData* GetKnotPtrAtIndex(size_t index) = 0;
+    virtual const Ts_KnotData* GetKnotPtrAtIndex(size_t index) const = 0;
     virtual Ts_TypedKnotData<double>
         GetKnotDataAsDouble(size_t index) const = 0;
 
@@ -82,6 +83,8 @@ public:
 
     virtual bool HasValueBlocks() const = 0;
     virtual bool HasValueBlockAtTime(TsTime time) const = 0;
+
+    virtual bool UpdateKnotTangentsAtIndex(size_t index) = 0;
 
 public:
     // Returns whether there is a valid inner-loop configuration.  If
@@ -153,18 +156,28 @@ public:
     Ts_KnotData* CloneKnotAtIndex(size_t index) const override;
     Ts_KnotData* CloneKnotAtTime(TsTime time) const override;
     Ts_KnotData* GetKnotPtrAtIndex(size_t index) override;
+    const Ts_KnotData* GetKnotPtrAtIndex(size_t index) const override;
     Ts_TypedKnotData<double>
         GetKnotDataAsDouble(size_t index) const override;
 
     void ClearKnots() override;
     void RemoveKnotAtTime(TsTime time) override;
 
+    // Apply offset and scale to all spline data.
+    // 
+    // If \p scale is negative, a coding error is generated. This is because 
+    // the spline is not only scaled, but also time-reversed. Doing so can
+    // lead to incorrect evaluation results with any scenario where direction
+    // of time is assumed, like dual-value knots, inner looping,
+    // segment interpolation mode assignment, etc.
     void ApplyOffsetAndScale(
         TsTime offset,
         double scale) override;
 
     bool HasValueBlocks() const override;
     bool HasValueBlockAtTime(TsTime time) const override;
+
+    bool UpdateKnotTangentsAtIndex(size_t index) override;
 
 public:
     // Per-knot data.
@@ -339,6 +352,14 @@ Ts_TypedSplineData<T>::GetKnotPtrAtIndex(
     return &(knots[index]);
 }
 
+template <typename T>
+const Ts_KnotData*
+Ts_TypedSplineData<T>::GetKnotPtrAtIndex(
+    const size_t index) const
+{
+    return &(knots[index]);
+}
+
 // Depending on T, this is either a verbatim copy or an increase in precision.
 template <typename T>
 Ts_TypedKnotData<double>
@@ -384,6 +405,14 @@ void Ts_TypedSplineData<T>::RemoveKnotAtTime(
     times.erase(it);
     customData.erase(time);
     knots.erase(knots.begin() + idx);
+
+    // Update the tangents on the knots either side of the one removed
+    if (idx > 0) {
+        UpdateKnotTangentsAtIndex(idx - 1);
+    }
+    if (idx < times.size()) {
+        UpdateKnotTangentsAtIndex(idx);
+    }
 }
 
 template <typename T>
@@ -392,27 +421,19 @@ static void _ApplyOffsetAndScaleToKnot(
     const TsTime offset,
     const double scale)
 {
-    const bool reversing = (scale < 0);
-    const double absScale = std::abs(scale);
+    // In our private implementation, we must have set a positive scale.
+    TF_VERIFY(scale > 0);
 
     // Process knot time (absolute).
     knotData->time = knotData->time * scale + offset;
 
     // Process tangent widths (relative, strictly positive).
-    knotData->preTanWidth *= absScale;
-    knotData->postTanWidth *= absScale;
+    knotData->preTanWidth *= scale;
+    knotData->postTanWidth *= scale;
 
     // Process slopes (inverse relative).
     knotData->preTanSlope /= scale;
     knotData->postTanSlope /= scale;
-
-    // Swap pre- and post-data if time-reversing.
-    if (reversing)
-    {
-        std::swap(knotData->preTanWidth, knotData->postTanWidth);
-        std::swap(knotData->preValue, knotData->value);
-        std::swap(knotData->preTanSlope, knotData->postTanSlope);
-    }
 }
 
 template <typename T>
@@ -420,45 +441,12 @@ void Ts_TypedSplineData<T>::ApplyOffsetAndScale(
     const TsTime offset,
     const double scale)
 {
-    // XXX: scale can be negative.  We believe this is uncommon.  It is supposed
-    // to mean that the spline is not only scaled, but also time-reversed.  We
-    // make an attempt, but there will be inconsistencies, because splines have
-    // several evaluation behaviors that are asymmetrical in time.  For now,
-    // what we guarantee is invertibility: if a spline is time-reversed twice,
-    // the original shape will be recovered exactly.
-    //
-    // The right fix would probably be to have an isReversed flag in SplineData,
-    // which would cause the evaluation logic to invert all the asymmetrical
-    // behaviors.  Those behaviors are:
-    //
-    // - Segment interpolation mode assignment.  Each knot controls the mode of
-    //   the following segment.  Without an isReversed flag, we can preserve the
-    //   modes of all segments, but in some cases we will lose the tentative
-    //   interpolation mode that was set on the last knot.
-    //
-    // - Inner looping.  The knot at the start of the prototype interval is
-    //   special.  There must be a knot there.  It is copied to the end of the
-    //   prototype interval and to the end of the post-looping interval.  If
-    //   there is a knot at the end of the prototype interval, it is ignored and
-    //   overwritten.  Without an isReversed flag, all we can do is exchange the
-    //   prototype start and end times.  If there is not a knot authored at the
-    //   end time, this will cause the reversed spline not to have inner loops
-    //   at all.  If there is a knot at the end time, the reversed spline may
-    //   have a different shape, because it is the (originally) end knot that
-    //   will be copied, not the start knot.
-    //
-    // - Held segments.  Evaluating in a held segment always produces the value
-    //   from the preceding knot.  Without an isReversed flag, the value will be
-    //   taken from the (originally) following knot instead.
-    //
-    // - Dual-valued knots.  Evaluating exactly at a dual-valued knot produces
-    //   the ordinary value, not the pre-value.  Without an isReversed flag, the
-    //   value will be taken from the (originally) pre-value instead.
-    //
-    const bool reversing = (scale < 0);
-    if (reversing)
+    if (scale <= 0)
     {
-        TF_WARN("Applying negative scale to spline");
+        TF_CODING_ERROR("Applying zero or negative scale to spline data, "
+                        "collapsing/reversing time and spline representation "
+                        "is not allowed.");
+        return;
     }
 
     // The spline is changed in the time dimension only.
@@ -477,35 +465,17 @@ void Ts_TypedSplineData<T>::ApplyOffsetAndScale(
         postExtrapolation.slope /= scale;
     }
 
-    // Swap extrapolations if time-reversing.
-    if (reversing)
-    {
-        std::swap(preExtrapolation, postExtrapolation);
-    }
-
     // Process inner-loop params.
     if (loopParams.protoEnd > loopParams.protoStart)
     {
         // Process start and end times (absolute).
         loopParams.protoStart = loopParams.protoStart * scale + offset;
         loopParams.protoEnd = loopParams.protoEnd * scale + offset;
-
-        // Swap start and end times if reversing.
-        if (reversing)
-        {
-            std::swap(loopParams.protoStart, loopParams.protoEnd);
-            std::swap(loopParams.numPreLoops, loopParams.numPostLoops);
-        }
     }
 
     // Process knot-times vector (absolute).
-    for (TsTime &time : times)
+    for (TsTime &time : times) {
         time = time * scale + offset;
-
-    // Reorder knot times if reversing.
-    if (reversing)
-    {
-        std::reverse(times.begin(), times.end());
     }
 
     // Process knots.  Duplicate the logic that is applied unconditionally, so
@@ -526,26 +496,18 @@ void Ts_TypedSplineData<T>::ApplyOffsetAndScale(
     }
     else
     {
-        for (Ts_TypedKnotData<T> &knotData : knots)
+        for (Ts_TypedKnotData<T> &knotData : knots) {
             _ApplyOffsetAndScaleToKnot(&knotData, offset, scale);
-    }
-
-    if (reversing)
-    {
-        // Move interpolation modes from start knots to end knots.
-        for (size_t i = 1; i < knots.size(); i++)
-            knots[i - 1].nextInterp = knots[i].nextInterp;
-
-        // Reorder knots.
-        std::reverse(knots.begin(), knots.end());
+        }
     }
 
     // Re-index custom data.  Times are adjusted absolutely.
     if (!customData.empty())
     {
         std::unordered_map<TsTime, VtDictionary> newCustomData;
-        for (const auto &mapPair : customData)
+        for (const auto &mapPair : customData) {
             newCustomData[mapPair.first * scale + offset] = mapPair.second;
+        }
         customData.swap(newCustomData);
     }
 }
@@ -615,6 +577,26 @@ bool Ts_TypedSplineData<T>::HasValueBlockAtTime(
     // interpolation.
     const auto knotIt = knots.begin() + (lbIt - times.begin());
     return (knotIt - 1)->nextInterp == TsInterpValueBlock;
+}
+
+template <typename T>
+bool Ts_TypedSplineData<T>::UpdateKnotTangentsAtIndex(size_t index)
+{
+    // XXX: Should we use PXR_PREFER_SAFETY_OVER_SPEED around this test?
+    if (!TF_VERIFY(index < knots.size(),
+                   "Knot index (%zd) out of range [0 .. %zd)",
+                   index, knots.size()))
+    {
+        return false;
+    }
+
+    Ts_TypedKnotData<T>* prevKnot = (index > 0 ? &knots[index - 1] : nullptr);
+    Ts_TypedKnotData<T>* knot = &knots[index];
+    Ts_TypedKnotData<T>* nextKnot = (index < knots.size() - 1
+                                     ? &knots[index + 1]
+                                     : nullptr);
+
+    return knot->UpdateTangents(prevKnot, nextKnot, curveType);
 }
 
 template <typename T>

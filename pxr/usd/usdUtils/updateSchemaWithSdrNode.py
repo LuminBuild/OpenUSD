@@ -58,7 +58,7 @@ def _CreateAttrSpecFromNodeAttribute(primSpec, prop, primDefForAttrPruning,
     # propertySpec
     if ((PropertyDefiningKeys.USD_SUPPRESS_PROPERTY in propMetadata) and
             propMetadata[PropertyDefiningKeys.USD_SUPPRESS_PROPERTY] == "True"):
-        return
+        return None
 
     propertyNSPrefixOverride = schemaPropertyNSPrefixOverride
     if PropertyDefiningKeys.PROPERTY_NS_PREFIX_OVERRIDE in propMetadata:
@@ -105,7 +105,7 @@ def _CreateAttrSpecFromNodeAttribute(primSpec, prop, primDefForAttrPruning,
                         "differs usd schema's property type '%s', for "
                         "duplicated property '%s'" %(attrType, usdAttrType, 
                         propName))
-            return
+            return propName
 
     # Copy over property parameters
     options = prop.GetOptions()
@@ -164,6 +164,8 @@ def _CreateAttrSpecFromNodeAttribute(primSpec, prop, primDefForAttrPruning,
         attrSpec.SetInfo(PropertyDefiningKeys.CONNECTABILITY, 
                 UsdShade.Tokens.interfaceOnly)
 
+    return propName
+
 def _SetSchemaUserDocFields(spec, doc):
     """
     Sets the user doc custom metadata fields in the generated schema for prim 
@@ -175,6 +177,23 @@ def _SetSchemaUserDocFields(spec, doc):
     # Set the "long-form" user doc, used when generating HTML schema docs
     # (example: https://openusd.org/release/user_guides/schemas/index.html)
     spec.customData[UserDocConstants.USERDOC_FULL] = doc
+
+
+def StringToBool(val):
+    """Convert a string representation of truth to True or False.
+    
+    True values are 'y', 'yes', 't', 'true', 'on', and '1';
+    False values are 'n', 'no', 'f', 'false', 'off', and '0'.
+    
+    Raises ValueError if `val` is anything else.
+    """
+    val = val.lower()
+    if val in ('y', 'yes', 't', 'true', 'on', '1'):
+        return True
+    elif val in ('n', 'no', 'f', 'false', 'off', '0'):
+        return False
+    else:
+        raise ValueError(f"Invalid truth value: {val}")
 
 def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
         overrideIdentifier=""):
@@ -265,7 +284,6 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
           SdfPropertySpec's CONNECTABILITY.
     """
 
-    import distutils.util
     import os
 
     # Early exit on invalid parameters
@@ -306,6 +324,8 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
 
     # Note: We are not working on dynamic multiple apply schemas right now.
     isAPI = schemaKind == SchemaDefiningMiscConstants.SINGLE_APPLY_SCHEMA
+    isTyped = schemaKind == SchemaDefiningMiscConstants.TYPED_SCHEMA
+
     # Fix schemaName and warn if needed
     if isAPI and \
         not schemaName.endswith(SchemaDefiningMiscConstants.API_STRING):
@@ -344,7 +364,7 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
     if SchemaDefiningKeys.PROVIDES_USD_SHADE_CONNECTABLE_API_BEHAVIOR in \
             sdrNodeMetadata:
         providesUsdShadeConnectableAPIBehavior = \
-            distutils.util.strtobool(sdrNodeMetadata[SchemaDefiningKeys. \
+            StringToBool(sdrNodeMetadata[SchemaDefiningKeys. \
                 PROVIDES_USD_SHADE_CONNECTABLE_API_BEHAVIOR])
 
     apiSchemasForAttrPruning = None
@@ -382,14 +402,14 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
             HasConnectableAPI(usdSchemaReg.GetTypeFromName(schemaBase))
 
     emitSdrOutput = True
-    for outputName in sdrNode.GetOutputNames():
+    for outputName in sdrNode.GetShaderOutputNames():
         if PropertyDefiningKeys.USD_SUPPRESS_PROPERTY in \
-                sdrNode.GetOutput(outputName).GetMetadata():
+                sdrNode.GetShaderOutput(outputName).GetMetadata():
             emitSdrOutput = False
             break;
 
     if (emitSdrOutput and \
-        len(sdrNode.GetOutputNames()) > 0 and \
+        len(sdrNode.GetShaderOutputNames()) > 0 and \
         schemaPropertyNSPrefixOverride is not None and \
         not _IsNSPrefixConnectableAPICompliant( \
                 schemaPropertyNSPrefixOverride)):
@@ -397,7 +417,7 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
             "the presence of schemaPropertyNSPrefixOverride (\"%s\"), as it " \
             "is illegal for non-connectable nodes to contain output " \
             "parameters, or shader nodes' outputs to not have the \"outputs\"" \
-            "namespace prefix." %(len(sdrNode.GetOutputNames()), \
+            "namespace prefix." %(len(sdrNode.GetShaderOutputNames()), \
             schemaPropertyNSPrefixOverride))
 
     if (schemaBaseProvidesConnectability and \
@@ -454,7 +474,7 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
                 # Since we want to assign the types for these to bool and
                 # because in python boolean type is a subset of int, we need to
                 # do following instead of assign the propValue directly.
-                propValue = distutils.util.strtobool(sdrNodeMetadata[propKey])
+                propValue = StringToBool(sdrNodeMetadata[propKey])
                 extraPlugInfo[propKey] = bool(propValue)
 
         primSpecCustomData['extraPlugInfo'] = extraPlugInfo
@@ -475,16 +495,32 @@ def UpdateSchemaWithSdrNode(schemaLayer, sdrNode, renderContext="",
         primDefForAttrPruning = \
             usdSchemaReg.FindConcretePrimDefinition(typedSchemaForAttrPruning)
 
+    # We want the property order on the output schema to match the param order
+    # from the source shader. SdrShaderNode should give the params to us in this
+    # order, so remember it as we go.
+    propOrder = []
+
     # Create attrSpecs from input parameters
-    for propName in sdrNode.GetInputNames():
-        _CreateAttrSpecFromNodeAttribute(primSpec, sdrNode.GetInput(propName), 
+    for propName in sdrNode.GetShaderInputNames():
+        attrName = _CreateAttrSpecFromNodeAttribute(
+                primSpec, sdrNode.GetShaderInput(propName), 
                 primDefForAttrPruning, schemaPropertyNSPrefixOverride)
+        if attrName:
+            propOrder.append(attrName)
 
     # Create attrSpecs from output parameters
     # Note that we always want outputs: namespace prefix for output attributes.
-    for propName in sdrNode.GetOutputNames():
-        _CreateAttrSpecFromNodeAttribute(primSpec, sdrNode.GetOutput(propName), 
+    for propName in sdrNode.GetShaderOutputNames():
+        attrName = _CreateAttrSpecFromNodeAttribute(
+                primSpec, sdrNode.GetShaderOutput(propName), 
                 primDefForAttrPruning, UsdShade.Tokens.outputs[:-1], False)
+        if attrName:
+            propOrder.append(attrName)
+
+    # Forward the source param order for typed and single-apply. Multiple-apply
+    # schemas cannot specify propertyOrder.
+    if (isTyped or isAPI) and propOrder:
+        primSpec.propertyOrder = propOrder
 
     # Create token shaderId attrSpec -- only for shader nodes
     if (schemaBaseProvidesConnectability or \

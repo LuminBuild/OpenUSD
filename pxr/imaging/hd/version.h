@@ -101,9 +101,17 @@
 //           passes the renderInstanceId to the plugin callback.
 // 75 -> 76: Added Scene State ID tunneling through the Hydra pipeline and
 //           arbitrary values Setter/Getter to HdRenderParam.
+// 76 -> 77: Added GetInputPrimType() to HdFlattenedDataSourceProvider::Context.
+//           The Context now stores an HdSceneIndexPrim containing the data
+//           source and prim type.
+// 77 -> 78: Removed the widget renderTag and added a displayInOverlay boolean
+//           attribute to serve the same purpose that widget signified.
+// 78 -> 79: Added Hgi::GarbageCollect.
+// 79 -> 80: Added refinedSolidWireOnSurf and solidWireOnSurf to HD_REPR_TOKENS.
+// 80 -> 81: Added IsValid() to HdRenderParam.
+// 81 -> 82: Added hgi/version.h
 
-
-#define HD_API_VERSION 76
+#define HD_API_VERSION 82
 
 // 1  ->  2: SimpleLighting -> FallbackLighting
 #define HD_SHADER_API 2

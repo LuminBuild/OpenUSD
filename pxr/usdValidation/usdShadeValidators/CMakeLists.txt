@@ -7,7 +7,6 @@ pxr_library(usdShadeValidators
         plug
         sdf
         usd
-        ndr
         sdr
         usdShade
         usdValidation
@@ -42,7 +41,10 @@ pxr_install_test_dir(
     DEST testUsdShadeValidators
 )
 
-pxr_register_test(testUsdShadeValidators
-    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdShadeValidators"
-    EXPECTED_RETURN_CODE 0
-)
+# Tests that rely on plugins aren't currently supported in static builds.
+if (BUILD_SHARED_LIBS)
+    pxr_register_test(testUsdShadeValidators
+        COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdShadeValidators"
+        EXPECTED_RETURN_CODE 0
+    )
+endif()

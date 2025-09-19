@@ -269,6 +269,11 @@
             ('indices', T_INTARRAY, {}),
             ('interpolation', T_TOKEN, {}),
             ('role', T_TOKEN, {}),
+            ('elementSize', T_INT,
+             dict(DOC = '''
+                 The number of values in the value array that must be aggregated
+                 for each element on the the primitive
+                 (same as UsdGeomPrimvar).'''))
         ],
         EXTRA_TOKENS = [
             'transform',
@@ -559,6 +564,11 @@
         SCHEMA_TOKEN = 'material',
         EXTRA_TOKENS = [
             '(universalRenderContext, "")',
+            '(all, "__all")',
+            'terminals',
+            'surface',
+            'displacement',
+            'volume'
         ],
         ADD_DEFAULT_LOCATOR = True,
 
@@ -825,6 +835,7 @@
             ('refineLevel', T_INT, {}),
             ('flatShadingEnabled', T_BOOL, {}),
             ('displacementEnabled', T_BOOL, {}),
+            ('displayInOverlay', T_BOOL, {}),
             ('occludedSelectionShowsThrough', T_BOOL, {}),
             ('pointsShadingEnabled', T_BOOL, {}),
             ('materialIsFinal', T_BOOL, {}),
@@ -1239,8 +1250,11 @@
         ADD_DEFAULT_LOCATOR = True,
         MEMBERS = [
             ('height', T_DOUBLE, {}),
-            # deprecated in favor of radiusTop and radiusBottom
-            ('radius', T_DOUBLE, {}), 
+            ('radius', T_DOUBLE,
+             dict(DOC = '''
+                Deprecated. Only use if no radiusTop or radiusBottom data
+                source. Comes from UsdGeom Cylinder which has been deprecated
+                in favor of Cylinder_1.''')),
             ('radiusTop', T_DOUBLE, {}),
             ('radiusBottom', T_DOUBLE, {}),
             ('axis', T_TOKEN, {}),
@@ -1259,8 +1273,11 @@
         ADD_DEFAULT_LOCATOR = True,
         MEMBERS = [
             ('height', T_DOUBLE, {}),
-            # deprecated in favor of radiusTop and radiusBottom
-            ('radius', T_DOUBLE, {}), 
+            ('radius', T_DOUBLE,
+             dict(DOC = '''
+                Deprecated. Only use if no radiusTop or radiusBottom data
+                source. Comes from UsdGeom Capsule which has been deprecated
+                in favor of Capsule_1.''')),
             ('radiusTop', T_DOUBLE, {}),
             ('radiusBottom', T_DOUBLE, {}),
             ('axis', T_TOKEN, {}),
@@ -1337,9 +1354,10 @@
                  render. It currently houses the active render settings
                  and pass prim paths that describe the information
                  necessary to generate images from a single invocation
-                 of a renderer, and the active time sample range and current  
+                 of a renderer, the active time sample range and current  
                  frame number that may be relevant to downstream scene indices 
-                 (e.g. procedural evaluation).
+                 (e.g. procedural evaluation), the time codes per second (sometimes
+                 informally referred to as FPS), and the primary camera.
 
                  We shall use the convention of a container data source at the root prim
                  of the scene index that is populated with this global state.
@@ -1349,10 +1367,12 @@
         ADD_DEFAULT_LOCATOR = True,
         MEMBERS = [
             ('ALL_MEMBERS', '', dict(ADD_LOCATOR = True)),
+            ('primaryCameraPrim', T_PATH, {}),
             ('activeRenderPassPrim', T_PATH, {}),
             ('activeRenderSettingsPrim', T_PATH, {}),
             ('startTimeCode', T_DOUBLE, {}),
             ('endTimeCode', T_DOUBLE, {}),
+            ('timeCodesPerSecond', T_DOUBLE, {}),
             ('currentFrame', T_DOUBLE, {}),
             ('sceneStateId', T_INT, {}),
         ],
